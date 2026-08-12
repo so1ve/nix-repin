@@ -27,6 +27,28 @@ export async function prefetch(
   return JSON.parse(decoder.decode(output.stdout)).hash as string;
 }
 
+export async function prefetchGit(
+  url: string,
+  revision: string,
+): Promise<string> {
+  const output = await new Deno.Command("nix-prefetch-git", {
+    args: [
+      "--quiet",
+      "--url",
+      url,
+      "--rev",
+      revision,
+    ],
+  }).output();
+  if (!output.success) {
+    throw new Error(
+      `nix-prefetch-git failed: ${decoder.decode(output.stderr).trim()}`,
+    );
+  }
+
+  return JSON.parse(decoder.decode(output.stdout)).hash as string;
+}
+
 export function renderSource(
   inputs: string[],
   attributes: Record<string, string>,

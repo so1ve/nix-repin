@@ -1,5 +1,6 @@
 import { Octokit } from "octokit";
 
+import * as cargo from "../cargo.ts";
 import * as nix from "../nix.ts";
 import type { SourceDefinition, SourceFiles } from "../source.ts";
 import { fetchurl } from "./fetchurl.ts";
@@ -9,16 +10,18 @@ const octokit = new Octokit({
   userAgent: "nix-repin",
 });
 
-interface BranchOptions {
-  branch: string;
+interface CommonOptions {
+  cargoLock?: string;
   files?: string[];
   repository: string;
 }
 
-interface ReleaseOptions {
+interface BranchOptions extends CommonOptions {
+  branch: string;
+}
+
+interface ReleaseOptions extends CommonOptions {
   assets?: Record<string, string>;
-  files?: string[];
-  repository: string;
   stripPrefix?: string;
 }
 
@@ -31,6 +34,21 @@ function parseRepository(value: string): [owner: string, repository: string] {
   return [owner, name];
 }
 
+function rawFile(
+  owner: string,
+  repository: string,
+  revision: string,
+  path: string,
+): URL {
+  return new URL(
+    `https://raw.githubusercontent.com/${
+      [owner, repository, revision, ...path.split("/")]
+        .map(encodeURIComponent)
+        .join("/")
+    }`,
+  );
+}
+
 function rawFiles(
   owner: string,
   repository: string,
@@ -40,15 +58,31 @@ function rawFiles(
   return Object.fromEntries(
     files.map((path) => [
       path,
-      new URL(
-        `https://raw.githubusercontent.com/${
-          [owner, repository, revision, ...path.split("/")]
-            .map(encodeURIComponent)
-            .join("/")
-        }`,
-      ),
+      rawFile(owner, repository, revision, path),
     ]),
   );
+}
+
+async function additionalFiles(
+  owner: string,
+  repository: string,
+  revision: string,
+  options: CommonOptions,
+): Promise<SourceFiles> {
+  const files = options.files
+    ? rawFiles(owner, repository, revision, options.files)
+    : {};
+  if (options.cargoLock) {
+    Object.assign(
+      files,
+      await cargo.lockFile(
+        options.cargoLock,
+        rawFile(owner, repository, revision, options.cargoLock),
+      ),
+    );
+  }
+
+  return files;
 }
 
 async function archiveSource(
@@ -127,12 +161,10 @@ export function release(options: ReleaseOptions): SourceDefinition {
       };
     }
 
-    if (options.files) {
-      Object.assign(
-        files,
-        rawFiles(owner, repository, tag, options.files),
-      );
-    }
+    Object.assign(
+      files,
+      await additionalFiles(owner, repository, tag, options),
+    );
 
     return files;
   };
@@ -156,12 +188,10 @@ export function branch(options: BranchOptions): SourceDefinition {
         { date },
       ),
     };
-    if (options.files) {
-      Object.assign(
-        files,
-        rawFiles(owner, repository, commit.sha, options.files),
-      );
-    }
+    Object.assign(
+      files,
+      await additionalFiles(owner, repository, commit.sha, options),
+    );
 
     return files;
   };

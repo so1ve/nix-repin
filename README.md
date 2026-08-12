@@ -59,9 +59,26 @@ Track a branch and copy files from the resolved revision:
 ```ts
 export default github.branch({
   branch: "main",
-  files: ["Cargo.lock"],
+  files: ["path/to/file"],
   repository: "owner/repository",
 });
+```
+
+Use `cargoLock` to copy a Cargo lock file and generate the `outputHashes`
+required by Nix for Git dependencies:
+
+```ts
+export default github.branch({
+  branch: "main",
+  cargoLock: "Cargo.lock",
+  repository: "owner/repository",
+});
+```
+
+Use the generated file in the package:
+
+```nix
+cargoDeps = rustPlatform.importCargoLock (import ./cargo-lock.nix);
 ```
 
 ## Custom sources

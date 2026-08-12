@@ -4,6 +4,7 @@
     "@std/bytes": "jsr:@std/bytes@1.0.6",
     "@std/cli": "jsr:@std/cli@1.0.32",
     "@std/path": "jsr:@std/path@1.1.6",
+    "@std/toml": "jsr:@std/toml@1.0.11",
     "nix-repin": "./src/mod.ts",
     "octokit": "npm:octokit@5.0.5"
   },

@@ -4,6 +4,7 @@
   lib,
   makeWrapper,
   nix,
+  nix-prefetch-git,
 }:
 
 let
@@ -22,7 +23,7 @@ buildDenoPackage {
   inherit (manifest) version;
   inherit src;
 
-  denoDepsHash = "sha256-Oij+JjrIV8m5u4cBhtuGsBsQHcWNQ9RYmxA6rQF93nY=";
+  denoDepsHash = "sha256-zGosKIT7a1n/7mGQ31jJuPnkFzbtkCH0XsXIU1BctRU=";
   dontBuild = true;
   nativeBuildInputs = [ makeWrapper ];
 
@@ -32,9 +33,15 @@ buildDenoPackage {
     mkdir -p "$out/bin" "$out/share/nix-repin"
     cp -r . "$out/share/nix-repin"
     makeWrapper ${lib.getExe deno} "$out/bin/nix-repin" \
-      --add-flags "run --cached-only --frozen --no-code-cache --no-prompt --vendor=true --config $out/share/nix-repin/deno.json --allow-env=GH_TOKEN,GITHUB_TOKEN --allow-net --allow-read --allow-run=${lib.getExe nix} --allow-write $out/share/nix-repin/src/cli.ts" \
+      --add-flags "run --cached-only --frozen --no-code-cache --no-prompt --vendor=true --config $out/share/nix-repin/deno.json --allow-env=GH_TOKEN,GITHUB_TOKEN --allow-net --allow-read --allow-run=${lib.getExe nix},${lib.getExe nix-prefetch-git} --allow-write $out/share/nix-repin/src/cli.ts" \
+      --unset LD_FOR_BUILD \
       --set DENO_DIR "$out/share/nix-repin/.deno" \
-      --set PATH ${lib.makeBinPath [ nix ]}
+      --set PATH ${
+        lib.makeBinPath [
+          nix
+          nix-prefetch-git
+        ]
+      }
 
     runHook postInstall
   '';
