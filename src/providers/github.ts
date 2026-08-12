@@ -96,13 +96,12 @@ async function archiveSource(
   const hash = await nix.prefetch(url, true);
 
   return nix.renderSource(
-    ["fetchFromGitHub"],
+    ["fetchzip"],
     { ...attributes, rev: revision },
-    `  src = fetchFromGitHub {
-    owner = ${nix.string(owner)};
-    repo = ${nix.string(repository)};
-    inherit rev;
+    `  src = fetchzip {
+    url = ${nix.string(url)};
     hash = ${nix.string(hash)};
+    extension = "tar.gz";
   };`,
   );
 }
