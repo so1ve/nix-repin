@@ -92,7 +92,7 @@ async function archiveSource(
   attributes: Record<string, string>,
 ): Promise<string> {
   const url =
-    `https://github.com/${owner}/${repository}/archive/${revision}.tar.gz`;
+    `https://codeload.github.com/${owner}/${repository}/tar.gz/${revision}`;
   const hash = await nix.prefetch(url, true);
 
   return nix.renderSource(
