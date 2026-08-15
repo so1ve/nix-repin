@@ -81,6 +81,19 @@ Use the generated file in the package:
 cargoDeps = rustPlatform.importCargoLock (import ./cargo-lock.nix);
 ```
 
+## NPM
+
+Track the latest published version of an npm package and generate a minimal
+`package.json`, complete `package-lock.json`, and matching `npmDepsHash`:
+
+```ts
+import { npm } from "nix-repin";
+
+export default npm.pkg({
+  name: "@scope/program",
+});
+```
+
 ## Custom sources
 
 Pass a function, which may be asynchronous, to `defineSource` when an upstream
@@ -101,19 +114,6 @@ export default defineSource(async () => {
     urls: release.downloads,
     version: release.version,
   });
-});
-```
-
-## npm
-
-Track the latest published version of an npm package and generate a minimal
-`package.json`, complete `package-lock.json`, and matching `npmDepsHash`:
-
-```ts
-import { npm } from "nix-repin";
-
-export default npm.pkg({
-  name: "@scope/program",
 });
 ```
 
