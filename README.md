@@ -104,6 +104,24 @@ export default defineSource(async () => {
 });
 ```
 
+## npm
+
+Track the latest published version of an npm package and generate a minimal
+`package.json`, complete `package-lock.json`, and matching `npmDepsHash`:
+
+```ts
+import { npm } from "nix-repin";
+
+export default npm.pkg({
+  name: "@scope/program",
+});
+```
+
+The generated `source.nix` exports `version` and `npmDepsHash`. The repository
+also receives a minimal `package.json` and its fully resolved lock file. Use
+`distTag` to track a tag other than `latest`, or `registry` for another npm
+registry.
+
 ## License
 
 [MIT](LICENSE). Made with ♥️ by [Ray](https://github.com/so1ve).
