@@ -38,6 +38,16 @@ export default github.release({
 });
 ```
 
+Set `includePrerelease` to consider prereleases as well as stable releases when
+selecting the most recently created release:
+
+```ts
+export default github.release({
+  includePrerelease: true,
+  repository: "owner/repository",
+});
+```
+
 Select release assets by Nix system:
 
 ```ts

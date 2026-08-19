@@ -22,6 +22,7 @@ interface BranchOptions extends CommonOptions {
 
 interface ReleaseOptions extends CommonOptions {
   assets?: Record<string, string>;
+  includePrerelease?: boolean;
   stripPrefix?: string;
 }
 
@@ -106,13 +107,41 @@ async function archiveSource(
   );
 }
 
+async function latestRelease(
+  owner: string,
+  repository: string,
+  includePrerelease: boolean,
+) {
+  if (!includePrerelease) {
+    return (await octokit.rest.repos.getLatestRelease({
+      owner,
+      repo: repository,
+    })).data;
+  }
+
+  const releases = await octokit.paginate(octokit.rest.repos.listReleases, {
+    owner,
+    per_page: 100,
+    repo: repository,
+  });
+  const release = releases
+    .filter((release) => !release.draft)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+  if (!release) {
+    throw new Error(`${owner}/${repository}: no published release found`);
+  }
+
+  return release;
+}
+
 export function release(options: ReleaseOptions): SourceDefinition {
   return async () => {
     const [owner, repository] = parseRepository(options.repository);
-    const { data: release } = await octokit.rest.repos.getLatestRelease({
+    const release = await latestRelease(
       owner,
-      repo: repository,
-    });
+      repository,
+      options.includePrerelease ?? false,
+    );
     const tag = release.tag_name;
     let version = tag;
     if (options.stripPrefix) {
