@@ -50,7 +50,9 @@ async function updatePackage(packageDirectory: string): Promise<void> {
   const definition: SourceDefinition = (await import(
     path.toFileUrl(path.resolve(packageDirectory, "source.ts")).href
   )).default;
-  const files = await definition();
+  const files = await definition({
+    packageDirectory: path.resolve(packageDirectory),
+  });
   const changed = (await Promise.all(
     Object.entries(files).map(([relativePath, source]) => {
       const target = filePath(packageDirectory, relativePath);

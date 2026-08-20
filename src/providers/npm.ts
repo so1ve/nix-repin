@@ -35,6 +35,27 @@ function sourceNix(version: string, npmDepsHash: string): string {
 `;
 }
 
+async function currentVersion(
+  packageDirectory: string,
+  name: string,
+): Promise<string | undefined> {
+  try {
+    const manifest = JSON.parse(
+      await Deno.readTextFile(`${packageDirectory}/package.json`),
+    ) as {
+      dependencies: Record<string, string>;
+    };
+
+    return manifest.dependencies[name];
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) {
+      return undefined;
+    }
+
+    throw error;
+  }
+}
+
 async function latestVersion(
   name: string,
   distTag: string,
@@ -52,12 +73,11 @@ async function latestVersion(
 }
 
 async function lockedPackage(
-  name: string,
   version: string,
   registry: string,
+  manifest: string,
 ): Promise<SourceFiles> {
   const directory = await Deno.makeTempDir({ prefix: "nix-repin-npm-" });
-  const manifest = packageJson(name, version);
   const lockPath = `${directory}/package-lock.json`;
   try {
     await Deno.writeTextFile(`${directory}/package.json`, manifest);
@@ -89,12 +109,17 @@ async function lockedPackage(
 export function pkg(options: PackageOptions): SourceDefinition {
   const registry = options.registry ?? defaultRegistry;
 
-  return async () => {
+  return async ({ packageDirectory }) => {
     const version = await latestVersion(
       options.name,
       options.distTag ?? "latest",
       registry,
     );
-    return lockedPackage(options.name, version, registry);
+    if (await currentVersion(packageDirectory, options.name) === version) {
+      return {};
+    }
+
+    const manifest = packageJson(options.name, version);
+    return lockedPackage(version, registry, manifest);
   };
 }

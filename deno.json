@@ -14,7 +14,7 @@
   },
   "nodeModulesDir": "none",
   "tasks": {
-    "check": "deno fmt --check && deno lint && deno check src/cli.ts src/mod.ts",
+    "check": "deno fmt --check && deno lint && deno check src/cli.ts src/mod.ts && deno test --allow-read --allow-write src",
     "fix": "deno fmt && deno lint --fix"
   }
 }
