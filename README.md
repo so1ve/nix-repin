@@ -154,6 +154,27 @@ src = source.src.overrideAttrs {
 };
 ```
 
+## VSIX (Visual Studio Marketplace)
+
+Track a Marketplace extension and map Nix systems to its target platforms:
+
+```ts
+import { marketplace } from "nix-repin";
+
+export default marketplace.extension({
+  publisher: "JetBrains",
+  name: "kotlin-server",
+  platforms: {
+    "x86_64-linux": "linux-x64",
+    "aarch64-linux": "linux-arm64",
+  },
+});
+```
+
+The provider selects the newest stable version available for every requested
+platform, so all generated sources use the same version. Omit `platforms` for a
+universal extension, or set `includePrerelease: true` to include previews.
+
 ## Custom sources
 
 Pass a function, which may be asynchronous, to `defineSource` when an upstream
