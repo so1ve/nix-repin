@@ -95,7 +95,7 @@ async function archiveSource(
 ): Promise<string> {
   const url =
     `https://codeload.github.com/${owner}/${repository}/tar.gz/${revision}`;
-  const hash = await nix.prefetch(url, true);
+  const hash = await nix.prefetch(url, { unpack: true });
 
   return nix.renderSource(
     ["fetchzip"],

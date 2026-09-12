@@ -7,7 +7,7 @@ export function string(value: string): string {
 
 export async function prefetch(
   url: string,
-  unpack = false,
+  { unpack = false, name }: { unpack?: boolean; name?: string } = {},
 ): Promise<string> {
   const output = await new Deno.Command("nix", {
     args: [
@@ -15,6 +15,7 @@ export async function prefetch(
       "prefetch-file",
       "--json",
       ...(unpack ? ["--unpack"] : []),
+      ...(name ? ["--name", name] : []),
       url,
     ],
   }).output();

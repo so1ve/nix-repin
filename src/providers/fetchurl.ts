@@ -3,6 +3,7 @@ import type { SourceFiles } from "../source.ts";
 
 interface Input {
   hash?: string;
+  name?: string;
   url: string;
 }
 
@@ -21,8 +22,9 @@ export async function fetchurl(
       return [
         system,
         {
-          hash: source.hash ?? await nix.prefetch(source.url),
-          url: source.url,
+          ...source,
+          hash: source.hash ??
+            await nix.prefetch(source.url, { name: source.name }),
         },
       ] as const;
     }),
@@ -31,6 +33,7 @@ export async function fetchurl(
     throw new Error("fetchurl requires at least one URL");
   }
 
+  // Match nix store prefetch-file's decoding of HTTP Content-Encoding.
   if (sources.length === 1 && sources[0][0] === "default") {
     const source = sources[0][1];
 
@@ -39,7 +42,10 @@ export async function fetchurl(
         ["fetchurl"],
         { version },
         `  src = fetchurl {
-    url = ${nix.string(source.url)};
+    curlOptsList = [ "--compressed" ];
+${source.name ? `    name = ${nix.string(source.name)};\n` : ""}    url = ${
+          nix.string(source.url)
+        };
     hash = ${nix.string(source.hash)};
   };`,
       ),
@@ -49,7 +55,9 @@ export async function fetchurl(
   const sourceSet = sources
     .map(([system, source]) =>
       `    ${nix.string(system)} = {
-      url = ${nix.string(source.url)};
+${source.name ? `      name = ${nix.string(source.name)};\n` : ""}      url = ${
+        nix.string(source.url)
+      };
       hash = ${nix.string(source.hash)};
     };`
     )
@@ -70,9 +78,12 @@ export async function fetchurl(
 ${sourceSet}
   };
 ${selectSource}
-  src = fetchurl {
-    inherit (source) url hash;
-  };`,
+  src = fetchurl (
+    source
+    // {
+      curlOptsList = [ "--compressed" ];
+    }
+  );`,
     ),
   };
 }
