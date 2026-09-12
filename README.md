@@ -104,6 +104,56 @@ export default npm.pkg({
 });
 ```
 
+The generated `source.nix` exports `version` and `npmDepsHash`. The repository
+also receives a minimal `package.json` and its fully resolved lock file. Use
+`distTag` to track a tag other than `latest`, or `registry` for another npm
+registry.
+
+## AUR
+
+Use an AUR package's upstream version to fill download URL templates:
+
+```ts
+import { aur } from "nix-repin";
+
+export default aur.pkg({
+  name: "baidunetdisk-bin",
+  urls: {
+    default:
+      "https://pkg-ant.baidu.com/issue/netdisk/LinuxGuanjia/{version}/baidunetdisk_{version}_amd64.deb",
+  },
+});
+```
+
+The provider queries the AUR RPC API, removes the Arch epoch and package release
+suffix, and substitutes `{version}` and `{system}` in each URL. Use Nix system
+names for platform-specific downloads or `default` for a shared source.
+
+## VSIX (Open VSX)
+
+Track an extension's VSIX from the Open VSX registry:
+
+```ts
+import { openvsx } from "nix-repin";
+
+export default openvsx.extension({
+  namespace: "vscjava",
+  name: "vscode-gradle",
+});
+```
+
+The provider resolves a versioned VSIX download, calculates its hash, and
+generates `source.nix` with `version` and `src`. It selects the newest stable
+universal build, including when newer previews precede it. Set
+`includePrerelease: true` to include previews. Extensions that publish only
+platform-specific builds are not supported.
+
+```nix
+src = source.src.overrideAttrs {
+  name = "gradle-language-server-${source.version}.zip";
+};
+```
+
 ## Custom sources
 
 Pass a function, which may be asynchronous, to `defineSource` when an upstream
@@ -126,11 +176,6 @@ export default defineSource(async () => {
   });
 });
 ```
-
-The generated `source.nix` exports `version` and `npmDepsHash`. The repository
-also receives a minimal `package.json` and its fully resolved lock file. Use
-`distTag` to track a tag other than `latest`, or `registry` for another npm
-registry.
 
 ## License
 

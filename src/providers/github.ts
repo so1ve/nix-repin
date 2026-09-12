@@ -3,6 +3,7 @@ import { Octokit } from "octokit";
 import * as cargo from "../cargo.ts";
 import * as nix from "../nix.ts";
 import type { SourceDefinition, SourceFiles } from "../source.ts";
+import { renderTemplate } from "../template.ts";
 import { fetchurl } from "./fetchurl.ts";
 
 const octokit = new Octokit({
@@ -157,10 +158,7 @@ export function release(options: ReleaseOptions): SourceDefinition {
     if (options.assets) {
       const urls = Object.fromEntries(
         Object.entries(options.assets).map(([system, template]) => {
-          const name = template
-            .replaceAll("{version}", version)
-            .replaceAll("{tag}", tag)
-            .replaceAll("{system}", system);
+          const name = renderTemplate(template, { version, tag, system });
           const asset = release.assets.find((asset) => asset.name === name);
           if (!asset) {
             throw new Error(
