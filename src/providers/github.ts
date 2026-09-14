@@ -4,7 +4,7 @@ import * as cargo from "../cargo.ts";
 import * as nix from "../nix.ts";
 import * as pubspec from "../pubspec.ts";
 import type { SourceDefinition, SourceFiles } from "../source.ts";
-import { renderTemplate } from "../template.ts";
+import { template } from "../template.ts";
 import { fetchurl } from "./fetchurl.ts";
 
 const octokit = new Octokit({
@@ -206,12 +206,14 @@ export function release(options: ReleaseOptions): SourceDefinition {
     let files: SourceFiles;
     if (options.assets) {
       const urls = Object.fromEntries(
-        Object.entries(options.assets).map(([system, template]) => {
-          const name = renderTemplate(template, { version, tag, system });
-          const asset = release.assets.find((asset) => asset.name === name);
+        Object.entries(options.assets).map(([system, source]) => {
+          const assetTemplate = template(source);
+          const asset = release.assets.find((asset) =>
+            assetTemplate.matches(asset.name, { version, tag, system })
+          );
           if (!asset) {
             throw new Error(
-              `${options.repository} release ${tag} has no asset ${name}`,
+              `${options.repository} release ${tag} has no asset matching ${source}`,
             );
           }
           const hash = asset.digest

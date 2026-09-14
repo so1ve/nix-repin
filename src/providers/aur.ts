@@ -1,5 +1,5 @@
 import type { SourceDefinition } from "../source.ts";
-import { renderTemplate } from "../template.ts";
+import { template } from "../template.ts";
 import { fetchurl } from "./fetchurl.ts";
 
 interface PackageOptions {
@@ -38,9 +38,9 @@ export function pkg(options: PackageOptions): SourceDefinition {
       "",
     );
     const urls = Object.fromEntries(
-      Object.entries(options.urls).map(([system, template]) => [
+      Object.entries(options.urls).map(([system, source]) => [
         system,
-        renderTemplate(template, { version, system }),
+        template(source).render({ version, system }),
       ]),
     );
 

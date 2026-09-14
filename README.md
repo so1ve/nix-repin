@@ -48,21 +48,25 @@ export default github.release({
 });
 ```
 
-Select release assets by Nix system:
+Select release assets by Nix system. Each value is a regular expression anchored
+to the whole asset name, with `{version}`, `{tag}`, and `{system}` substituted
+literally:
 
 ```ts
 export default github.release({
   assets: {
-    "aarch64-linux": "program-{version}-linux-arm64.tar.gz",
-    "x86_64-linux": "program-{version}-linux-x64.tar.gz",
+    "aarch64-linux": "program-{version}-linux-arm64\\.tar\\.gz",
+    "x86_64-linux": "program-{version}-linux-x64\\.tar\\.gz",
   },
   repository: "owner/repository",
   stripPrefix: "v",
 });
 ```
 
-Asset templates support `{version}`, `{tag}`, and `{system}`. Use `default` for
-a platform-independent asset.
+Regex syntax can be mixed in for names that carry extra data, for example a
+build suffix: `"program-{version}\\+.*\\.tar\\.gz"`.
+
+Use `default` for a platform-independent asset.
 
 Track a branch and copy files from the resolved revision:
 
@@ -104,9 +108,9 @@ export default github.release({
 });
 ```
 
-`pubspecLock` names the nixpkgs attribute providing the Flutter SDK.
-Keep the value in sync with the `flutter` argument of the package's `default.nix`.
-The option needs an archive source, so it is rejected together with `assets`.
+`pubspecLock` names the nixpkgs attribute providing the Flutter SDK. Keep the
+value in sync with the `flutter` argument of the package's `default.nix`. The
+option needs an archive source, so it is rejected together with `assets`.
 
 ## NPM
 
