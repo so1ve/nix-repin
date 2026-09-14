@@ -24,7 +24,7 @@ export async function fetchurl(
         {
           ...source,
           hash: source.hash ??
-            await nix.prefetch(source.url, { name: source.name }),
+            (await nix.prefetch(source.url, { name: source.name })).hash,
         },
       ] as const;
     }),

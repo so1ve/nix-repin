@@ -2,6 +2,7 @@ import { Octokit } from "octokit";
 
 import * as cargo from "../cargo.ts";
 import * as nix from "../nix.ts";
+import * as pubspec from "../pubspec.ts";
 import type { SourceDefinition, SourceFiles } from "../source.ts";
 import { renderTemplate } from "../template.ts";
 import { fetchurl } from "./fetchurl.ts";
@@ -17,15 +18,37 @@ interface CommonOptions {
   repository: string;
 }
 
-interface BranchOptions extends CommonOptions {
+/**
+ * Flutter applications keep `pubspec.lock` out of the repository, so nix-repin
+ * resolves it with the SDK named here and commits the JSON instead.
+ */
+interface PubspecOptions {
+  /**
+   * nixpkgs attribute providing the Flutter SDK that resolves `pubspec.lock`,
+   * e.g. `flutter347`.
+   */
+  pubspecLock?: string;
+}
+
+interface BranchOptions extends CommonOptions, PubspecOptions {
   branch: string;
 }
 
-interface ReleaseOptions extends CommonOptions {
-  assets?: Record<string, string>;
+interface ReleaseBaseOptions extends CommonOptions, PubspecOptions {
   includePrerelease?: boolean;
   stripPrefix?: string;
 }
+
+/**
+ * Release assets are prebuilt, so there is no source tree to resolve a pub lock
+ * from: `pubspecLock` is only accepted for archive sources.
+ */
+export type ReleaseOptions =
+  & ReleaseBaseOptions
+  & (
+    | { assets?: undefined }
+    | { assets: Record<string, string>; pubspecLock?: never }
+  );
 
 function parseRepository(value: string): [owner: string, repository: string] {
   const [owner, name, extra] = value.split("/");
@@ -87,25 +110,51 @@ async function additionalFiles(
   return files;
 }
 
+interface ArchiveSource {
+  sourceNix: string;
+  sourceTree: string;
+}
+
 async function archiveSource(
   owner: string,
   repository: string,
   revision: string,
   attributes: Record<string, string>,
-): Promise<string> {
+): Promise<ArchiveSource> {
   const url =
     `https://codeload.github.com/${owner}/${repository}/tar.gz/${revision}`;
-  const hash = await nix.prefetch(url, { unpack: true });
+  const { hash, storePath } = await nix.prefetch(url, { unpack: true });
 
-  return nix.renderSource(
-    ["fetchzip"],
-    { ...attributes, rev: revision },
-    `  src = fetchzip {
+  return {
+    sourceTree: storePath,
+    sourceNix: nix.renderSource(
+      ["fetchzip"],
+      { ...attributes, rev: revision },
+      `  src = fetchzip {
     url = ${nix.string(url)};
     hash = ${nix.string(hash)};
     extension = "tar.gz";
   };`,
-  );
+    ),
+  };
+}
+
+async function pubspecFiles(
+  flutter: string | undefined,
+  packageDirectory: string,
+  sourceTree: string,
+): Promise<SourceFiles> {
+  if (flutter === undefined) {
+    return {};
+  }
+
+  const files = await pubspec.pubspecLock({
+    flutter,
+    packageDirectory,
+    source: sourceTree,
+  });
+
+  return files;
 }
 
 async function latestRelease(
@@ -136,7 +185,7 @@ async function latestRelease(
 }
 
 export function release(options: ReleaseOptions): SourceDefinition {
-  return async () => {
+  return async ({ packageDirectory }) => {
     const [owner, repository] = parseRepository(options.repository);
     const release = await latestRelease(
       owner,
@@ -177,14 +226,16 @@ export function release(options: ReleaseOptions): SourceDefinition {
       );
       files = await fetchurl({ urls, version });
     } else {
-      files = {
-        "source.nix": await archiveSource(
-          owner,
-          repository,
-          tag,
-          { version },
+      const archive = await archiveSource(owner, repository, tag, { version });
+      files = { "source.nix": archive.sourceNix };
+      Object.assign(
+        files,
+        await pubspecFiles(
+          options.pubspecLock,
+          packageDirectory,
+          archive.sourceTree,
         ),
-      };
+      );
     }
 
     Object.assign(
@@ -197,7 +248,7 @@ export function release(options: ReleaseOptions): SourceDefinition {
 }
 
 export function branch(options: BranchOptions): SourceDefinition {
-  return async () => {
+  return async ({ packageDirectory }) => {
     const [owner, repository] = parseRepository(options.repository);
     const { data: commit } = await octokit.rest.repos.getCommit({
       owner,
@@ -206,17 +257,21 @@ export function branch(options: BranchOptions): SourceDefinition {
     });
     const date = commit.commit.committer!.date!.slice(0, 10);
 
-    const files: SourceFiles = {
-      "source.nix": await archiveSource(
-        owner,
-        repository,
-        commit.sha,
-        { date },
-      ),
-    };
+    const archive = await archiveSource(owner, repository, commit.sha, {
+      date,
+    });
+    const files: SourceFiles = { "source.nix": archive.sourceNix };
     Object.assign(
       files,
       await additionalFiles(owner, repository, commit.sha, options),
+    );
+    Object.assign(
+      files,
+      await pubspecFiles(
+        options.pubspecLock,
+        packageDirectory,
+        archive.sourceTree,
+      ),
     );
 
     return files;

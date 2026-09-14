@@ -91,6 +91,23 @@ Use the generated file in the package:
 cargoDeps = rustPlatform.importCargoLock (import ./cargo-lock.nix);
 ```
 
+## Flutter (pubspec.lock)
+
+Resolve a Flutter application's gitignored `pubspec.lock` and commit it as the
+JSON `pubspec.lock.json` that `buildFlutterApplication` imports:
+
+```ts
+export default github.release({
+  pubspecLock: "flutter347",
+  repository: "owner/repository",
+  stripPrefix: "v",
+});
+```
+
+`pubspecLock` names the nixpkgs attribute providing the Flutter SDK.
+Keep the value in sync with the `flutter` argument of the package's `default.nix`.
+The option needs an archive source, so it is rejected together with `assets`.
+
 ## NPM
 
 Track the latest published version of an npm package and generate a minimal
