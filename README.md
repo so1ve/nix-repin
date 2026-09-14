@@ -78,15 +78,40 @@ export default github.branch({
 });
 ```
 
-Use `cargoLock` to copy a Cargo lock file and generate the `outputHashes`
-required by Nix for Git dependencies:
+## Composing providers
+
+Use `defineSource` to apply providers in sequence to one archive source. For
+example, generate `npmDepsHash` from a package lock file:
 
 ```ts
-export default github.branch({
-  branch: "main",
-  cargoLock: "Cargo.lock",
-  repository: "owner/repository",
-});
+import { defineSource, github, npm } from "nix-repin";
+
+export default defineSource(
+  github.release({
+    repository: "owner/repository",
+    stripPrefix: "v",
+  }),
+  npm.lock("app/package-lock.json"),
+);
+```
+
+The generated `source.nix` exports `npmDepsHash` alongside the archive source.
+Transforms requiring an archive, including `npm.lock`, cannot follow a release
+asset provider.
+
+Copy a Cargo lock file and generate the `outputHashes` required by Nix for Git
+dependencies:
+
+```ts
+import { cargo, defineSource, github } from "nix-repin";
+
+export default defineSource(
+  github.branch({
+    branch: "main",
+    repository: "owner/repository",
+  }),
+  cargo.lock("Cargo.lock"),
+);
 ```
 
 Use the generated file in the package:
@@ -101,16 +126,19 @@ Resolve a Flutter application's gitignored `pubspec.lock` and commit it as the
 JSON `pubspec.lock.json` that `buildFlutterApplication` imports:
 
 ```ts
-export default github.release({
-  pubspecLock: "flutter347",
-  repository: "owner/repository",
-  stripPrefix: "v",
-});
+import { defineSource, github, pubspec } from "nix-repin";
+
+export default defineSource(
+  github.release({
+    repository: "owner/repository",
+    stripPrefix: "v",
+  }),
+  pubspec.lock({ flutter: "flutter347" }),
+);
 ```
 
-`pubspecLock` names the nixpkgs attribute providing the Flutter SDK. Keep the
-value in sync with the `flutter` argument of the package's `default.nix`. The
-option needs an archive source, so it is rejected together with `assets`.
+`flutter` names the nixpkgs attribute providing the Flutter SDK. Keep the value
+in sync with the `flutter` argument of the package's `default.nix`.
 
 ## NPM
 
