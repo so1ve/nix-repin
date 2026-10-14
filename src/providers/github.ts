@@ -19,9 +19,15 @@ interface CommonOptions {
   repository: string;
 }
 
-interface BranchOptions extends CommonOptions {
-  branch: string;
+export interface CommitOptions {
+  repository: string;
+  /** Branch to track; defaults to the repository's default branch. */
+  branch?: string;
+  /** Only consider commits before this ISO 8601 timestamp. */
+  before?: string;
 }
+
+type BranchOptions = CommonOptions & CommitOptions;
 
 interface ReleaseOptions extends CommonOptions {
   assets?: Record<string, string>;
@@ -78,22 +84,44 @@ function additionalFiles(
     : {};
 }
 
-interface ArchiveSource {
-  hash: string;
-  sourceTree: string;
+export interface ArchiveSource extends nix.PrefetchResult {
   url: string;
 }
 
-async function archiveSource(
-  owner: string,
+/** Download and unpack a GitHub revision, returning its URL, hash and store path. */
+export async function prefetchArchive(
   repository: string,
   revision: string,
 ): Promise<ArchiveSource> {
-  const url =
-    `https://codeload.github.com/${owner}/${repository}/tar.gz/${revision}`;
+  const [owner, name] = parseRepository(repository);
+  const url = `https://codeload.github.com/${owner}/${name}/tar.gz/${revision}`;
   const { hash, storePath } = await nix.prefetch(url, { unpack: true });
 
-  return { hash, sourceTree: storePath, url };
+  return { hash, storePath, url };
+}
+
+/** Resolve a branch's newest commit, optionally bounded by a publication cutoff. */
+export async function latestCommit(
+  options: CommitOptions,
+): Promise<{ rev: string; date: string }> {
+  const [owner, repo] = parseRepository(options.repository);
+  const { data: commits } = await octokit.rest.repos.listCommits({
+    owner,
+    repo,
+    sha: options.branch,
+    until: options.before,
+    per_page: 1,
+  });
+  const commit = commits[0];
+  if (!commit) {
+    throw new Error(
+      `${options.repository}: no commit found${
+        options.before ? ` before ${options.before}` : ""
+      }`,
+    );
+  }
+
+  return { rev: commit.sha, date: commit.commit.committer!.date!.slice(0, 10) };
 }
 
 function archiveSourceNix(
@@ -181,9 +209,9 @@ export function release(options: ReleaseOptions): SourceDefinition {
       );
       source.addFiles(await fetchurl({ urls, version }));
     } else {
-      const archive = await archiveSource(owner, repository, tag);
+      const archive = await prefetchArchive(options.repository, tag);
       source.setNixSource(
-        archive.sourceTree,
+        archive.storePath,
         { version, rev: tag },
         (attributes) => archiveSourceNix(archive, attributes),
       );
@@ -196,19 +224,13 @@ export function release(options: ReleaseOptions): SourceDefinition {
 export function branch(options: BranchOptions): SourceDefinition {
   return provider(async (source) => {
     const [owner, repository] = parseRepository(options.repository);
-    const { data: commit } = await octokit.rest.repos.getCommit({
-      owner,
-      ref: options.branch,
-      repo: repository,
-    });
-    const date = commit.commit.committer!.date!.slice(0, 10);
-
-    const archive = await archiveSource(owner, repository, commit.sha);
+    const { rev, date } = await latestCommit(options);
+    const archive = await prefetchArchive(options.repository, rev);
     source.setNixSource(
-      archive.sourceTree,
-      { date, rev: commit.sha },
+      archive.storePath,
+      { date, rev },
       (attributes) => archiveSourceNix(archive, attributes),
     );
-    source.addFiles(additionalFiles(owner, repository, commit.sha, options));
+    source.addFiles(additionalFiles(owner, repository, rev, options));
   });
 }

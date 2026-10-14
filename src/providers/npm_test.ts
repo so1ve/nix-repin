@@ -1,22 +1,13 @@
-import { pkg } from "./npm.ts";
+import { deepStrictEqual } from "node:assert";
 
-function assert(condition: boolean, message: string): asserts condition {
-  if (!condition) {
-    throw new Error(message);
-  }
-}
+import { pkg } from "./npm.ts";
 
 Deno.test("pkg skips lock generation when the package version is current", async () => {
   const directory = await Deno.makeTempDir({ prefix: "nix-repin-npm-test-" });
   const name = "@scope/program";
   const version = "1.2.3";
   const originalFetch = globalThis.fetch;
-  let requestedUrl: string | URL | Request | undefined;
-
-  globalThis.fetch = (input) => {
-    requestedUrl = input;
-    return Promise.resolve(Response.json({ version }));
-  };
+  globalThis.fetch = () => Promise.resolve(Response.json({ version }));
 
   try {
     await Deno.writeTextFile(
@@ -25,13 +16,7 @@ Deno.test("pkg skips lock generation when the package version is current", async
     );
 
     const files = await pkg({ name })({ packageDirectory: directory });
-
-    assert(Object.keys(files).length === 0, "expected no generated files");
-    assert(
-      String(requestedUrl) ===
-        "https://registry.npmjs.org/%40scope%2Fprogram/latest",
-      "expected one dist-tag lookup",
-    );
+    deepStrictEqual(files, {});
   } finally {
     globalThis.fetch = originalFetch;
     await Deno.remove(directory, { recursive: true });

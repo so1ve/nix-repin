@@ -1,31 +1,26 @@
 # nix-repin
 
-`nix-repin` is an extensible source updater for Nix packages. Define a
-`source.ts` and `nix-repin` will generate a `source.nix` for you.
+`nix-repin` updates Nix package sources from TypeScript definitions. Define each
+package in `pkgs/<name>/source.ts`. Generated files are written beside it.
 
 ## Usage
 
-Update every package containing `pkgs/*/source.ts`:
-
-```console
+```sh
+# Update all packages with a pkgs/*/source.ts definition
 nix-repin
-```
 
-Update selected packages:
-
-```console
+# Update selected packages
 nix-repin xwayland-satellite yanhekt-autoslides
-```
 
-Use another package directory:
-
-```console
+# Use another package directory
 nix-repin --packages-root /path/to/repository/pkgs
 ```
 
 Set `GITHUB_TOKEN` or `GH_TOKEN` to authenticate GitHub requests.
 
-## GitHub
+## Providers
+
+### GitHub
 
 Track the latest release archive:
 
@@ -38,19 +33,11 @@ export default github.release({
 });
 ```
 
-Set `includePrerelease` to consider prereleases as well as stable releases when
-selecting the most recently created release:
+`stripPrefix` removes the given prefix from the version and fails if the tag
+does not start with it. Set `includePrerelease: true` to select the most
+recently created release, including prereleases.
 
-```ts
-export default github.release({
-  includePrerelease: true,
-  repository: "owner/repository",
-});
-```
-
-Select release assets by Nix system. Each value is a regular expression anchored
-to the whole asset name, with `{version}`, `{tag}`, and `{system}` substituted
-literally:
+To download release assets, map Nix systems to filename patterns:
 
 ```ts
 export default github.release({
@@ -63,10 +50,9 @@ export default github.release({
 });
 ```
 
-Regex syntax can be mixed in for names that carry extra data, for example a
-build suffix: `"program-{version}\\+.*\\.tar\\.gz"`.
-
-Use `default` for a platform-independent asset.
+Patterns are regular expressions matched against the whole filename. The
+`{version}`, `{tag}`, and `{system}` placeholders are substituted literally. Use
+`default` for a platform-independent asset.
 
 Track a branch and copy files from the resolved revision:
 
@@ -78,72 +64,12 @@ export default github.branch({
 });
 ```
 
-## Composing providers
+Omit `branch` to use the repository's default branch. Set `before` to an ISO
+8601 timestamp to select the newest commit before that time.
 
-Use `defineSource` to apply providers in sequence to one archive source. For
-example, generate `npmDepsHash` from a package lock file:
+### npm
 
-```ts
-import { defineSource, github, npm } from "nix-repin";
-
-export default defineSource(
-  github.release({
-    repository: "owner/repository",
-    stripPrefix: "v",
-  }),
-  npm.lock("app/package-lock.json"),
-);
-```
-
-The generated `source.nix` exports `npmDepsHash` alongside the archive source.
-Transforms requiring an archive, including `npm.lock`, cannot follow a release
-asset provider.
-
-Copy a Cargo lock file and generate the `outputHashes` required by Nix for Git
-dependencies:
-
-```ts
-import { cargo, defineSource, github } from "nix-repin";
-
-export default defineSource(
-  github.branch({
-    branch: "main",
-    repository: "owner/repository",
-  }),
-  cargo.lock("Cargo.lock"),
-);
-```
-
-Use the generated file in the package:
-
-```nix
-cargoDeps = rustPlatform.importCargoLock (import ./cargo-lock.nix);
-```
-
-## Flutter (pubspec.lock)
-
-Resolve a Flutter application's gitignored `pubspec.lock` and commit it as the
-JSON `pubspec.lock.json` that `buildFlutterApplication` imports:
-
-```ts
-import { defineSource, github, pubspec } from "nix-repin";
-
-export default defineSource(
-  github.release({
-    repository: "owner/repository",
-    stripPrefix: "v",
-  }),
-  pubspec.lock({ flutter: "flutter347" }),
-);
-```
-
-`flutter` names the nixpkgs attribute providing the Flutter SDK. Keep the value
-in sync with the `flutter` argument of the package's `default.nix`.
-
-## NPM
-
-Track the latest published version of an npm package and generate a minimal
-`package.json`, complete `package-lock.json`, and matching `npmDepsHash`:
+Track an npm package's `latest` tag:
 
 ```ts
 import { npm } from "nix-repin";
@@ -153,12 +79,11 @@ export default npm.pkg({
 });
 ```
 
-The generated `source.nix` exports `version` and `npmDepsHash`. The repository
-also receives a minimal `package.json` and its fully resolved lock file. Use
-`distTag` to track a tag other than `latest`, or `registry` for another npm
-registry.
+This generates `package.json`, `package-lock.json`, and a `source.nix` exporting
+`version` and `npmDepsHash`. Set `distTag` to track another tag or `registry` to
+use another registry.
 
-## AUR
+### AUR
 
 Use an AUR package's upstream version to fill download URL templates:
 
@@ -174,13 +99,13 @@ export default aur.pkg({
 });
 ```
 
-The provider queries the AUR RPC API, removes the Arch epoch and package release
-suffix, and substitutes `{version}` and `{system}` in each URL. Use Nix system
-names for platform-specific downloads or `default` for a shared source.
+The provider removes the Arch epoch and package release suffix from the version.
+URLs support `{version}` and `{system}` placeholders. Use Nix system names for
+platform-specific downloads or `default` for a shared source.
 
-## VSIX (Open VSX)
+### VS Code extensions
 
-Track an extension's VSIX from the Open VSX registry:
+Download a VSIX from Open VSX:
 
 ```ts
 import { openvsx } from "nix-repin";
@@ -191,21 +116,10 @@ export default openvsx.extension({
 });
 ```
 
-The provider resolves a versioned VSIX download, calculates its hash, and
-generates `source.nix` with `version` and `src`. It selects the newest stable
-universal build, including when newer previews precede it. Set
-`includePrerelease: true` to include previews. Extensions that publish only
-platform-specific builds are not supported.
+The Open VSX provider supports only universal builds. It selects the newest
+stable build and generates `source.nix` with `version` and `src`.
 
-```nix
-src = source.src.overrideAttrs {
-  name = "gradle-language-server-${source.version}.zip";
-};
-```
-
-## VSIX (Visual Studio Marketplace)
-
-Track a Marketplace extension and map Nix systems to its target platforms:
+For Visual Studio Marketplace, map Nix systems to extension platforms:
 
 ```ts
 import { marketplace } from "nix-repin";
@@ -220,15 +134,48 @@ export default marketplace.extension({
 });
 ```
 
-The provider selects the newest stable version available for every requested
-platform, so all generated sources use the same version. Omit `platforms` for a
-universal extension, or set `includePrerelease: true` to include previews.
+The Marketplace provider selects the newest stable version available for every
+requested platform. Omit `platforms` for a universal extension. Both providers
+accept `includePrerelease: true` to include previews.
+
+## Composing providers
+
+`defineSource` runs providers in order, sharing one archive and its generated
+files. For example, add `npmDepsHash` to a GitHub source:
+
+```ts
+import { defineSource, github, npm } from "nix-repin";
+
+export default defineSource(
+  github.release({ repository: "owner/repository", stripPrefix: "v" }),
+  npm.lock("app/package-lock.json"),
+);
+```
+
+These lock providers need an archive source. Place them after `github.branch` or
+`github.release` without `assets`. File paths are relative to the archive root.
+
+| Provider                                  | Output                                                                                      |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `npm.lock("package-lock.json")`           | Adds `npmDepsHash` to `source.nix`.                                                         |
+| `cargo.lock("Cargo.lock")`                | Copies the lock file and writes `cargo-lock.nix` with `outputHashes` for Git dependencies.  |
+| `pubspec.lock({ flutter: "flutter347" })` | Resolves Flutter dependencies and writes `pubspec.lock.json` for `buildFlutterApplication`. |
+
+For Flutter, `flutter` names an SDK attribute in the repository flake's
+`nixpkgs` input. It must match the `flutter` argument in the package's
+`default.nix`.
+
+Import the generated Cargo lock settings in the package:
+
+```nix
+cargoDeps = rustPlatform.importCargoLock (import ./cargo-lock.nix);
+```
 
 ## Custom sources
 
-Pass a function, which may be asynchronous, to `defineSource` when an upstream
-uses its own update manifest or download service. Return `fetchurl(...)` with
-the resolved version and URLs; `nix-repin` calculates missing hashes.
+For other upstreams, pass a function to `defineSource`. Use `fetchurl` to
+generate `source.nix` from a version and download URLs. Missing hashes are
+calculated automatically.
 
 ```ts
 import { defineSource, fetchurl } from "nix-repin";
@@ -246,6 +193,36 @@ export default defineSource(async () => {
   });
 });
 ```
+
+The function can also return a map of relative file paths to text, `Uint8Array`
+contents, or `URL` objects to download.
+
+### Reusable tools
+
+Import these tools from `nix-repin` to fetch source data or generate custom
+files:
+
+| Tool                                                    | Result                                                                                                         |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `github.latestCommit({ repository, branch?, before? })` | Commit `rev` and `date` (`YYYY-MM-DD`); defaults to the repository's default branch.                           |
+| `github.prefetchArchive(repository, revision)`          | Unpacked archive `storePath`, `url`, and Nix `hash`.                                                           |
+| `npm.writeLock(directory, options?)`                    | Writes `package-lock.json` from the directory's `package.json`, without running scripts or installing modules. |
+| `npm.hash(lockPath)`                                    | Calculates `npmDepsHash` from an existing lock file.                                                           |
+| `nix.prefetch(url, { unpack?, name? })`                 | Download `hash` and `storePath`.                                                                               |
+| `nix.prefetchGit(url, revision)`                        | Nix hash for a Git checkout.                                                                                   |
+| `runCommand(program, args, { cwd?, env? })`             | Trimmed stdout; throws with command output on failure.                                                         |
+
+`before` is an ISO 8601 timestamp. For `npm.writeLock`, it limits both the
+package and dependency versions. The other options are `registry` and
+`legacyPeerDeps` (ignore peer dependencies).
+
+Create `package.json` before calling `npm.writeLock`. Check or edit the
+generated lock file before passing it to `npm.hash`. The caller owns the
+directory and must clean up temporary files, including npm's cache at
+`directory/cache`.
+
+See [nix.ts](src/nix.ts) for Nix rendering and nixpkgs build helpers, and
+[mod.ts](src/mod.ts) for all exports and types.
 
 ## License
 

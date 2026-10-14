@@ -1,3 +1,5 @@
+import * as path from "@std/path";
+
 import { runCommand } from "../command.ts";
 import * as nix from "../nix.ts";
 import {
@@ -15,10 +17,40 @@ export interface PackageOptions {
   registry?: string;
 }
 
+export interface LockOptions {
+  /** Only resolve versions published on or before this ISO 8601 timestamp. */
+  before?: string;
+  /** Ignore peer dependencies while resolving the lock file. */
+  legacyPeerDeps?: boolean;
+  /** npm registry base URL without a trailing slash. */
+  registry?: string;
+}
+
 const defaultRegistry = "https://registry.npmjs.org";
 
-function hash(path: string): Promise<string> {
+/** Calculate npmDepsHash from an existing package-lock.json. */
+export function hash(path: string): Promise<string> {
   return runCommand("prefetch-npm-deps", [path]);
+}
+
+/** Write package-lock.json for a directory's package.json without running scripts. */
+export async function writeLock(
+  directory: string,
+  options: LockOptions = {},
+): Promise<void> {
+  await runCommand("npm", [
+    "install",
+    "--package-lock-only",
+    "--ignore-scripts",
+    "--no-audit",
+    "--no-fund",
+    `--registry=${options.registry ?? defaultRegistry}`,
+    ...(options.before ? [`--before=${options.before}`] : []),
+    ...(options.legacyPeerDeps ? ["--legacy-peer-deps"] : []),
+  ], {
+    cwd: directory,
+    env: { NPM_CONFIG_CACHE: path.resolve(directory, "cache") },
+  });
 }
 
 /** Generate npmDepsHash from a package-lock.json in an archive source. */
@@ -94,17 +126,7 @@ async function lockedPackage(
   const lockPath = `${directory}/package-lock.json`;
   try {
     await Deno.writeTextFile(`${directory}/package.json`, manifest);
-    await runCommand("npm", [
-      "install",
-      "--package-lock-only",
-      "--ignore-scripts",
-      "--no-audit",
-      "--no-fund",
-      `--registry=${registry}`,
-    ], {
-      cwd: directory,
-      env: { NPM_CONFIG_CACHE: `${directory}/cache` },
-    });
+    await writeLock(directory, { registry });
 
     const lock = await Deno.readTextFile(lockPath);
     const npmDepsHash = await hash(lockPath);
