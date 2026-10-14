@@ -88,8 +88,9 @@ export type SourceDefinition = (
 
 type Provider = (source: Source) =>
   | void
+  | false
   | SourceFiles
-  | Promise<void | SourceFiles>;
+  | Promise<void | false | SourceFiles>;
 
 const providerRun = Symbol("nix-repin.provider-run");
 
@@ -100,19 +101,26 @@ type ComposableSourceDefinition = SourceDefinition & {
 async function applyProvider(
   source: Source,
   definition: SourceDefinition,
-): Promise<void> {
+): Promise<boolean> {
   const provider = (definition as ComposableSourceDefinition)[providerRun];
   const files = provider ? await provider(source) : await definition(source);
+  if (files === false) {
+    return false;
+  }
   if (files !== undefined) {
     source.addFiles(files);
   }
+  return true;
 }
 
-/** Create a provider that can be used directly or composed with defineSource. */
+/** Create a composable provider. Return false to skip the entire source update. */
 export function provider(run: Provider): SourceDefinition {
   const definition: ComposableSourceDefinition = async (context) => {
     const source = new Source(context);
     const files = await run(source);
+    if (files === false) {
+      return {};
+    }
     if (files !== undefined) {
       source.addFiles(files);
     }
@@ -128,7 +136,9 @@ export function defineSource(
 ): SourceDefinition {
   return provider(async (source) => {
     for (const definition of definitions) {
-      await applyProvider(source, definition);
+      if (!await applyProvider(source, definition)) {
+        return false;
+      }
     }
   });
 }

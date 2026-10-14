@@ -22,7 +22,7 @@ Set `GITHUB_TOKEN` or `GH_TOKEN` to authenticate GitHub requests.
 
 ### GitHub
 
-Track the latest release archive:
+Track the release archive with the highest version:
 
 ```ts
 import { github } from "nix-repin";
@@ -33,9 +33,25 @@ export default github.release({
 });
 ```
 
-`stripPrefix` removes the given prefix from the version and fails if the tag
-does not start with it. Set `includePrerelease: true` to select the most
-recently created release, including prereleases.
+`github.release` selects published releases, excluding prereleases unless
+`includePrerelease: true` is set. Tags are sorted by Nix's
+`builtins.compareVersions`, regardless of release date.
+
+Use `github.tag` to select from repository tags, including repositories without
+releases:
+
+```ts
+export default github.tag({
+  repository: "owner/repository",
+  tagPattern: "v[0-9]+\\.[0-9]+\\.[0-9]+",
+  stripPrefix: "v",
+});
+```
+
+Both providers accept `tagPattern`, a regular expression matched against the
+whole tag before sorting. Omit it to consider all tags. `github.tag` has no
+release metadata; use the pattern to exclude preview tags. `stripPrefix` removes
+the given prefix from the selected tag's version and fails if it is absent.
 
 To download release assets, map Nix systems to filename patterns:
 
@@ -152,8 +168,14 @@ export default defineSource(
 );
 ```
 
-These lock providers need an archive source. Place them after `github.branch` or
-`github.release` without `assets`. File paths are relative to the archive root.
+If a GitHub archive's `rev` matches the existing `source.nix`, the entire
+`defineSource` update is skipped, including later providers and file downloads.
+Remove `source.nix` to regenerate it at the same revision. `npm.pkg` also skips
+the entire update when the package version is unchanged.
+
+These lock providers need an archive source. Place them after `github.branch`,
+`github.tag`, or `github.release` without `assets`. File paths are relative to
+the archive root.
 
 | Provider                                  | Output                                                                                      |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -196,6 +218,10 @@ export default defineSource(async () => {
 
 The function can also return a map of relative file paths to text, `Uint8Array`
 contents, or `URL` objects to download.
+
+Use `provider` for a custom function that needs the shared `Source`. Return
+`false` from that function to skip the entire update and discard collected
+output.
 
 ### Reusable tools
 

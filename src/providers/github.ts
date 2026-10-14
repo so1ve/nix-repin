@@ -1,8 +1,10 @@
 import { Octokit } from "octokit";
 
+import { runCommand } from "../command.ts";
 import * as nix from "../nix.ts";
 import {
   provider,
+  type Source,
   type SourceDefinition,
   type SourceFiles,
 } from "../source.ts";
@@ -29,10 +31,15 @@ export interface CommitOptions {
 
 type BranchOptions = CommonOptions & CommitOptions;
 
-interface ReleaseOptions extends CommonOptions {
+interface TagOptions extends CommonOptions {
+  /** Regular expression matched against the whole tag. */
+  tagPattern?: string;
+  stripPrefix?: string;
+}
+
+interface ReleaseOptions extends TagOptions {
   assets?: Record<string, string>;
   includePrerelease?: boolean;
-  stripPrefix?: string;
 }
 
 function parseRepository(value: string): [owner: string, repository: string] {
@@ -139,52 +146,93 @@ function archiveSourceNix(
   );
 }
 
-async function latestRelease(
-  owner: string,
-  repository: string,
-  includePrerelease: boolean,
-) {
-  if (!includePrerelease) {
-    return (await octokit.rest.repos.getLatestRelease({
+async function selectTag(tags: string[], options: TagOptions) {
+  const pattern = new RegExp(`^(?:${options.tagPattern ?? ".*"})$`);
+  const matching = tags.filter((tag) => pattern.test(tag));
+  if (matching.length === 0) {
+    throw new Error(`${options.repository}: no matching tag found`);
+  }
+
+  const tag: string = JSON.parse(
+    await runCommand("nix", [
+      "eval",
+      "--json",
+      "--expr",
+      `builtins.head (builtins.sort (a: b: builtins.compareVersions a b > 0) [
+      ${matching.map(nix.string).join("\n")}
+    ])`,
+    ]),
+  );
+  const prefix = options.stripPrefix ?? "";
+  if (!tag.startsWith(prefix)) {
+    throw new Error(
+      `${options.repository}: tag ${tag} does not start with ${prefix}`,
+    );
+  }
+
+  return { tag, version: tag.slice(prefix.length) };
+}
+
+async function archive(
+  source: Source,
+  options: CommonOptions,
+  attributes: Record<string, string> & { rev: string },
+): Promise<false | void> {
+  try {
+    const current = await Deno.readTextFile(
+      `${source.packageDirectory}/source.nix`,
+    );
+    if (current.includes(`\n  rev = ${nix.string(attributes.rev)};\n`)) {
+      return false;
+    }
+  } catch (error) {
+    if (!(error instanceof Deno.errors.NotFound)) {
+      throw error;
+    }
+  }
+
+  const fetched = await prefetchArchive(options.repository, attributes.rev);
+  source.setNixSource(
+    fetched.storePath,
+    attributes,
+    (attributes) => archiveSourceNix(fetched, attributes),
+  );
+  const [owner, repository] = parseRepository(options.repository);
+  source.addFiles(additionalFiles(owner, repository, attributes.rev, options));
+}
+
+/** Track the highest matching tag, including repositories without releases. */
+export function tag(options: TagOptions): SourceDefinition {
+  return provider(async (source) => {
+    const [owner, repo] = parseRepository(options.repository);
+    const tags = await octokit.paginate(octokit.rest.repos.listTags, {
       owner,
-      repo: repository,
-    })).data;
-  }
-
-  const releases = await octokit.paginate(octokit.rest.repos.listReleases, {
-    owner,
-    per_page: 100,
-    repo: repository,
+      repo,
+      per_page: 100,
+    });
+    const { tag, version } = await selectTag(
+      tags.map((tag) => tag.name),
+      options,
+    );
+    return archive(source, options, { version, rev: tag });
   });
-  const release = releases
-    .filter((release) => !release.draft)
-    .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
-  if (!release) {
-    throw new Error(`${owner}/${repository}: no published release found`);
-  }
-
-  return release;
 }
 
 export function release(options: ReleaseOptions): SourceDefinition {
   return provider(async (source) => {
     const [owner, repository] = parseRepository(options.repository);
-    const release = await latestRelease(
+    const releases = (await octokit.paginate(octokit.rest.repos.listReleases, {
       owner,
-      repository,
-      options.includePrerelease ?? false,
+      repo: repository,
+      per_page: 100,
+    })).filter((release) =>
+      !release.draft && (options.includePrerelease || !release.prerelease)
     );
-    const tag = release.tag_name;
-    let version = tag;
-    if (options.stripPrefix) {
-      if (!version.startsWith(options.stripPrefix)) {
-        throw new Error(
-          `${options.repository}: release tag ${version} does not start with ${options.stripPrefix}`,
-        );
-      }
-
-      version = version.slice(options.stripPrefix.length);
-    }
+    const { tag, version } = await selectTag(
+      releases.map((release) => release.tag_name),
+      options,
+    );
+    const release = releases.find((release) => release.tag_name === tag)!;
     if (options.assets) {
       const urls = Object.fromEntries(
         Object.entries(options.assets).map(([system, source]) => {
@@ -209,12 +257,7 @@ export function release(options: ReleaseOptions): SourceDefinition {
       );
       source.addFiles(await fetchurl({ urls, version }));
     } else {
-      const archive = await prefetchArchive(options.repository, tag);
-      source.setNixSource(
-        archive.storePath,
-        { version, rev: tag },
-        (attributes) => archiveSourceNix(archive, attributes),
-      );
+      return archive(source, options, { version, rev: tag });
     }
 
     source.addFiles(additionalFiles(owner, repository, tag, options));
@@ -223,14 +266,7 @@ export function release(options: ReleaseOptions): SourceDefinition {
 
 export function branch(options: BranchOptions): SourceDefinition {
   return provider(async (source) => {
-    const [owner, repository] = parseRepository(options.repository);
     const { rev, date } = await latestCommit(options);
-    const archive = await prefetchArchive(options.repository, rev);
-    source.setNixSource(
-      archive.storePath,
-      { date, rev },
-      (attributes) => archiveSourceNix(archive, attributes),
-    );
-    source.addFiles(additionalFiles(owner, repository, rev, options));
+    return archive(source, options, { date, rev });
   });
 }

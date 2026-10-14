@@ -153,7 +153,7 @@ export function pkg(options: PackageOptions): SourceDefinition {
     if (
       await currentVersion(source.packageDirectory, options.name) === version
     ) {
-      return;
+      return false;
     }
 
     const manifest = packageJson(options.name, version);
