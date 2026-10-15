@@ -1,3 +1,4 @@
+import { compare, tryParse } from "@std/semver";
 import { Octokit } from "octokit";
 
 import { runCommand } from "../command.ts";
@@ -153,17 +154,23 @@ async function selectTag(tags: string[], options: TagOptions) {
     throw new Error(`${options.repository}: no matching tag found`);
   }
 
-  const tag: string = JSON.parse(
-    await runCommand("nix", [
-      "eval",
-      "--json",
-      "--expr",
-      `builtins.head (builtins.sort (a: b: builtins.compareVersions a b > 0) [
+  const prefix = options.stripPrefix ?? "";
+  const versions = matching.map((tag) => ({
+    tag,
+    version: tryParse(tag.startsWith(prefix) ? tag.slice(prefix.length) : tag),
+  }));
+  const tag: string = versions.every(({ version }) => version !== undefined)
+    ? versions.sort((a, b) => compare(b.version!, a.version!))[0].tag
+    : JSON.parse(
+      await runCommand("nix", [
+        "eval",
+        "--json",
+        "--expr",
+        `builtins.head (builtins.sort (a: b: builtins.compareVersions a b > 0) [
       ${matching.map(nix.string).join("\n")}
     ])`,
-    ]),
-  );
-  const prefix = options.stripPrefix ?? "";
+      ]),
+    );
   if (!tag.startsWith(prefix)) {
     throw new Error(
       `${options.repository}: tag ${tag} does not start with ${prefix}`,

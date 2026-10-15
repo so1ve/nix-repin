@@ -4,6 +4,7 @@
     "@std/bytes": "jsr:@std/bytes@1.0.6",
     "@std/cli": "jsr:@std/cli@1.0.32",
     "@std/path": "jsr:@std/path@1.1.6",
+    "@std/semver": "jsr:@std/semver@1.0.8",
     "@std/toml": "jsr:@std/toml@1.0.11",
     "nix-repin": "./src/mod.ts",
     "octokit": "npm:octokit@5.0.5"
@@ -14,7 +15,7 @@
   },
   "nodeModulesDir": "none",
   "tasks": {
-    "check": "deno fmt --check && deno lint && deno check src/cli.ts src/mod.ts && deno test --allow-read --allow-write src",
+    "check": "deno fmt --check && deno lint && deno check src/cli.ts src/mod.ts && deno test --allow-env=GITHUB_TOKEN,GH_TOKEN --allow-read --allow-write src",
     "fix": "deno fmt && deno lint --fix"
   }
 }

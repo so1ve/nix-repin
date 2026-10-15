@@ -25,7 +25,7 @@ buildDenoPackage {
   inherit (manifest) version;
   inherit src;
 
-  denoDepsHash = "sha256-zGosKIT7a1n/7mGQ31jJuPnkFzbtkCH0XsXIU1BctRU=";
+  denoDepsHash = "sha256-9y2HHn24tbZ7UP5A52RPnEyOBLcQh6IKwXHQLgoatck=";
   dontBuild = true;
   nativeBuildInputs = [ makeWrapper ];
 

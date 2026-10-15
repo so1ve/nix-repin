@@ -34,8 +34,11 @@ export default github.release({
 ```
 
 `github.release` selects published releases, excluding prereleases unless
-`includePrerelease: true` is set. Tags are sorted by Nix's
-`builtins.compareVersions`, regardless of release date.
+`includePrerelease: true` is set. After removing `stripPrefix`, tags are sorted
+by SemVer: a stable version ranks above its `alpha`, `beta`, and `rc` versions.
+If any matching tag cannot be parsed as SemVer, the selection uses Nix's
+`builtins.compareVersions` for all candidates. Release dates do not affect
+sorting.
 
 Use `github.tag` to select from repository tags, including repositories without
 releases:

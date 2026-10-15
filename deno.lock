@@ -7,6 +7,7 @@
     "jsr:@std/fmt@^1.0.10": "1.0.10",
     "jsr:@std/internal@^1.0.14": "1.0.14",
     "jsr:@std/path@1.1.6": "1.1.6",
+    "jsr:@std/semver@1.0.8": "1.0.8",
     "jsr:@std/toml@1.0.11": "1.0.11",
     "npm:octokit@5.0.5": "5.0.5"
   },
@@ -35,6 +36,9 @@
       "dependencies": [
         "jsr:@std/internal"
       ]
+    },
+    "@std/semver@1.0.8": {
+      "integrity": "dc830e8b8b6a380c895d53fbfd1258dc253704ca57bbe1629ac65fd7830179b7"
     },
     "@std/toml@1.0.11": {
       "integrity": "e084988b872ca4bad6aedfb7350f6eeed0e8ba88e9ee5e1590621c5b5bb8f715",
@@ -299,6 +303,7 @@
       "jsr:@std/bytes@1.0.6",
       "jsr:@std/cli@1.0.32",
       "jsr:@std/path@1.1.6",
+      "jsr:@std/semver@1.0.8",
       "jsr:@std/toml@1.0.11",
       "npm:octokit@5.0.5"
     ]
