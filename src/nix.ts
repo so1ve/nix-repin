@@ -9,6 +9,12 @@ export interface PrefetchResult {
   storePath: string;
 }
 
+export interface GitSource extends PrefetchResult {
+  rev: string;
+  /** Commit date in YYYY-MM-DD format. */
+  date: string;
+}
+
 export function string(value: string): string {
   return JSON.stringify(value).replaceAll("${", "\\${");
 }
@@ -34,6 +40,14 @@ export async function prefetchGit(
   url: string,
   revision: string,
 ): Promise<string> {
+  return (await prefetchGitSource(url, revision)).hash;
+}
+
+/** Fetch a Git checkout without submodules and return its commit and store path. */
+export async function prefetchGitSource(
+  url: string,
+  revision: string,
+): Promise<GitSource> {
   const output = await runCommand("nix-prefetch-git", [
     "--quiet",
     "--url",
@@ -42,7 +56,13 @@ export async function prefetchGit(
     revision,
   ]);
 
-  return JSON.parse(output).hash as string;
+  const { rev, date, hash, path } = JSON.parse(output) as {
+    rev: string;
+    date: string;
+    hash: string;
+    path: string;
+  };
+  return { rev, date: date.slice(0, 10), hash, storePath: path };
 }
 
 /** Walk up from `from` to the repository flake that contains the package. */
@@ -119,4 +139,20 @@ in
   inherit ${exported};
 }
 `;
+}
+
+/** Render a tar.gz source using a known unpacked hash, without downloading it. */
+export function renderArchive(
+  source: { url: string; hash: string },
+  attributes: Record<string, string>,
+): string {
+  return renderSource(
+    ["fetchzip"],
+    attributes,
+    `  src = fetchzip {
+    url = ${string(source.url)};
+    hash = ${string(source.hash)};
+    extension = "tar.gz";
+  };`,
+  );
 }

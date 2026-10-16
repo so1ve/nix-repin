@@ -96,13 +96,20 @@ export interface ArchiveSource extends nix.PrefetchResult {
   url: string;
 }
 
+/** Build the tar.gz URL for a GitHub revision without fetching it. */
+export function archiveUrl(repository: string, revision: string): string {
+  const [owner, name] = parseRepository(repository);
+  return `https://codeload.github.com/${encodeURIComponent(owner)}/${
+    encodeURIComponent(name)
+  }/tar.gz/${encodeURIComponent(revision)}`;
+}
+
 /** Download and unpack a GitHub revision, returning its URL, hash and store path. */
 export async function prefetchArchive(
   repository: string,
   revision: string,
 ): Promise<ArchiveSource> {
-  const [owner, name] = parseRepository(repository);
-  const url = `https://codeload.github.com/${owner}/${name}/tar.gz/${revision}`;
+  const url = archiveUrl(repository, revision);
   const { hash, storePath } = await nix.prefetch(url, { unpack: true });
 
   return { hash, storePath, url };
@@ -130,21 +137,6 @@ export async function latestCommit(
   }
 
   return { rev: commit.sha, date: commit.commit.committer!.date!.slice(0, 10) };
-}
-
-function archiveSourceNix(
-  source: ArchiveSource,
-  attributes: Record<string, string>,
-): string {
-  return nix.renderSource(
-    ["fetchzip"],
-    attributes,
-    `  src = fetchzip {
-    url = ${nix.string(source.url)};
-    hash = ${nix.string(source.hash)};
-    extension = "tar.gz";
-  };`,
-  );
 }
 
 async function selectTag(tags: string[], options: TagOptions) {
@@ -185,24 +177,15 @@ async function archive(
   options: CommonOptions,
   attributes: Record<string, string> & { rev: string },
 ): Promise<false | void> {
-  try {
-    const current = await Deno.readTextFile(
-      `${source.packageDirectory}/source.nix`,
-    );
-    if (current.includes(`\n  rev = ${nix.string(attributes.rev)};\n`)) {
-      return false;
-    }
-  } catch (error) {
-    if (!(error instanceof Deno.errors.NotFound)) {
-      throw error;
-    }
+  if (await source.isCurrent("rev", attributes.rev)) {
+    return false;
   }
 
   const fetched = await prefetchArchive(options.repository, attributes.rev);
   source.setNixSource(
     fetched.storePath,
     attributes,
-    (attributes) => archiveSourceNix(fetched, attributes),
+    (attributes) => nix.renderArchive(fetched, attributes),
   );
   const [owner, repository] = parseRepository(options.repository);
   source.addFiles(additionalFiles(owner, repository, attributes.rev, options));

@@ -7,6 +7,7 @@ import {
   type SourceDefinition,
   type SourceFiles,
 } from "../source.ts";
+import { fetchurl } from "./fetchurl.ts";
 
 export interface PackageOptions {
   /** npm distribution tag to track. */
@@ -101,11 +102,11 @@ async function currentVersion(
   }
 }
 
-async function latestVersion(
+async function packageMetadata(
   name: string,
   distTag: string,
   registry: string,
-): Promise<string> {
+): Promise<{ version: string; dist: { tarball: string } }> {
   const url = `${registry}/${encodeURIComponent(name)}/${
     encodeURIComponent(distTag)
   }`;
@@ -114,7 +115,7 @@ async function latestVersion(
     throw new Error(`${name}: ${url} returned ${response.status}`);
   }
 
-  return (await response.json() as { version: string }).version;
+  return response.json();
 }
 
 async function lockedPackage(
@@ -145,7 +146,7 @@ export function pkg(options: PackageOptions): SourceDefinition {
   const registry = options.registry ?? defaultRegistry;
 
   return provider(async (source) => {
-    const version = await latestVersion(
+    const { version } = await packageMetadata(
       options.name,
       options.distTag ?? "latest",
       registry,
@@ -158,5 +159,21 @@ export function pkg(options: PackageOptions): SourceDefinition {
 
     const manifest = packageJson(options.name, version);
     return lockedPackage(version, registry, manifest);
+  });
+}
+
+/** Track an npm dist-tag and generate a fetchurl source for its published tarball. */
+export function tarball(options: PackageOptions): SourceDefinition {
+  return provider(async (source) => {
+    const { version, dist } = await packageMetadata(
+      options.name,
+      options.distTag ?? "latest",
+      options.registry ?? defaultRegistry,
+    );
+    if (await source.isCurrent("version", version)) {
+      return false;
+    }
+
+    return fetchurl({ version, urls: { default: dist.tarball } });
   });
 }

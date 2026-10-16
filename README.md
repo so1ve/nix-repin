@@ -86,6 +86,23 @@ export default github.branch({
 Omit `branch` to use the repository's default branch. Set `before` to an ISO
 8601 timestamp to select the newest commit before that time.
 
+### Git
+
+Track a branch from any Git remote, including Gists and Codeberg:
+
+```ts
+import { git } from "nix-repin";
+
+export default git.branch({
+  url: "https://codeberg.org/owner/repository.git",
+  branch: "main",
+});
+```
+
+Omit `branch` to follow the remote's `HEAD`. This generates a `fetchgit` source
+with `rev` and `date` (`YYYY-MM-DD`), without submodules. Later providers can
+read files from the checkout.
+
 ### npm
 
 Track an npm package's `latest` tag:
@@ -101,6 +118,15 @@ export default npm.pkg({
 This generates `package.json`, `package-lock.json`, and a `source.nix` exporting
 `version` and `npmDepsHash`. Set `distTag` to track another tag or `registry` to
 use another registry.
+
+To download the published tarball, use `npm.tarball`:
+
+```ts
+export default npm.tarball({ name: "@cnbcool/cnb-cli" });
+```
+
+It accepts the same options and generates a `source.nix` exporting `version` and
+a `fetchurl` source. It does not generate an npm lock file.
 
 ### AUR
 
@@ -171,14 +197,15 @@ export default defineSource(
 );
 ```
 
-If a GitHub archive's `rev` matches the existing `source.nix`, the entire
-`defineSource` update is skipped, including later providers and file downloads.
-Remove `source.nix` to regenerate it at the same revision. `npm.pkg` also skips
-the entire update when the package version is unchanged.
+If a GitHub archive or Git checkout's `rev` matches the existing `source.nix`,
+the entire `defineSource` update is skipped, including later providers and file
+downloads. `npm.tarball` does the same for `version`. Remove `source.nix` to
+regenerate these sources. `npm.pkg` checks the dependency version in its
+generated `package.json`; remove that file to regenerate its lock.
 
 These lock providers need an archive source. Place them after `github.branch`,
-`github.tag`, or `github.release` without `assets`. File paths are relative to
-the archive root.
+`github.tag`, `github.release` without `assets`, or `git.branch`. File paths are
+relative to the source root.
 
 | Provider                                  | Output                                                                                      |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -224,7 +251,49 @@ contents, or `URL` objects to download.
 
 Use `provider` for a custom function that needs the shared `Source`. Return
 `false` from that function to skip the entire update and discard collected
-output.
+output. `await source.isCurrent("rev", rev)` checks a value in the existing
+generated `source.nix`.
+
+### Codeberg
+
+Resolve a ref once, then use that commit to read files and fetch an archive:
+
+```ts
+import { codeberg } from "nix-repin";
+
+const repository = "Koromix/rygel";
+const { rev } = await codeberg.resolveRef(repository, "koffi/2.14.1");
+const manifest = JSON.parse(
+  await codeberg.readFile(repository, rev, "src/koffi/package.json"),
+);
+const archive = await codeberg.prefetchArchive(repository, rev);
+```
+
+`resolveRef` accepts a branch, tag or commit and returns `rev` and `date`.
+`readFile` returns UTF-8 text. `prefetchArchive` returns `url`, `hash` and
+`storePath`; it unpacks by default, producing a hash for `fetchzip`. Pass
+`{ unpack: false }` to hash the compressed tarball for `fetchurl`.
+
+### Render an archive with a known hash
+
+Use `nix.renderArchive` when an upstream lock file already supplies the revision
+and unpacked hash. It generates Nix text without downloading the source:
+
+```ts
+import { github, nix } from "nix-repin";
+
+const { owner, repo, rev, narHash } = lock.nodes["tree-sitter-nix"].locked;
+const files = {
+  "tree-sitter-nix.nix": nix.renderArchive(
+    { url: github.archiveUrl(`${owner}/${repo}`, rev), hash: narHash },
+    { rev },
+  ),
+};
+```
+
+The renderer uses `fetchzip` with a `tar.gz` extension. Both
+`github.archiveUrl(repository, revision)` and
+`codeberg.archiveUrl(repository, revision)` build URLs without fetching them.
 
 ### Reusable tools
 
@@ -239,6 +308,8 @@ files:
 | `npm.hash(lockPath)`                                    | Calculates `npmDepsHash` from an existing lock file.                                                           |
 | `nix.prefetch(url, { unpack?, name? })`                 | Download `hash` and `storePath`.                                                                               |
 | `nix.prefetchGit(url, revision)`                        | Nix hash for a Git checkout.                                                                                   |
+| `nix.prefetchGitSource(url, revision)`                  | Git checkout `rev`, `date`, `hash`, and `storePath`, without submodules.                                       |
+| `copyTree(from, to)`                                    | Copies a tree to a writable directory, preserving symlinks and permission bits and adding owner write access.  |
 | `runCommand(program, args, { cwd?, env? })`             | Trimmed stdout; throws with command output on failure.                                                         |
 
 `before` is an ISO 8601 timestamp. For `npm.writeLock`, it limits both the

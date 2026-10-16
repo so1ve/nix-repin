@@ -1,5 +1,7 @@
 import * as path from "@std/path";
 
+import * as nix from "./nix.ts";
+
 export type FileSource = string | Uint8Array | URL;
 export type SourceFiles = Record<string, FileSource>;
 
@@ -22,6 +24,21 @@ export class Source implements SourceContext {
 
   constructor(context: SourceContext) {
     this.packageDirectory = context.packageDirectory;
+  }
+
+  /** Check an attribute in the existing generated source.nix. */
+  async isCurrent(name: string, value: string): Promise<boolean> {
+    try {
+      const current = await Deno.readTextFile(
+        path.join(this.packageDirectory, "source.nix"),
+      );
+      return current.includes(`\n  ${name} = ${nix.string(value)};\n`);
+    } catch (error) {
+      if (error instanceof Deno.errors.NotFound) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   addFiles(files: SourceFiles): void {
