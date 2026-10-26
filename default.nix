@@ -1,6 +1,7 @@
 {
   buildDenoPackage,
   coreutils,
+  darwin,
   deno,
   git,
   lib,
@@ -9,6 +10,7 @@
   nix-prefetch-git,
   nodejs_24,
   prefetch-npm-deps,
+  stdenv,
 }:
 
 let
@@ -36,19 +38,26 @@ buildDenoPackage {
 
     mkdir -p "$out/bin" "$out/share/nix-repin"
     cp -r . "$out/share/nix-repin"
+    # Deno looks up the bundled npm packages by registry, so ~/.npmrc must not change it.
+    echo "registry=https://registry.npmjs.org/" > "$out/share/nix-repin/.npmrc"
+    # With a scoped --allow-run, Deno refuses to spawn programs while any LD_* or DYLD_* variable is set.
     makeWrapper ${lib.getExe deno} "$out/bin/nix-repin" \
       --add-flags "run --cached-only --frozen --no-code-cache --no-prompt --vendor=true --config $out/share/nix-repin/deno.json --allow-env=GH_TOKEN,GITHUB_TOKEN --allow-net --allow-read --allow-run=${lib.getExe git},${lib.getExe nix},${lib.getExe nix-prefetch-git},${lib.getExe' nodejs_24 "npm"},${lib.getExe prefetch-npm-deps} --allow-write $out/share/nix-repin/src/cli.ts" \
-      --unset LD_FOR_BUILD \
+      --run 'unset "''${!LD_@}" "''${!DYLD_@}"' \
       --set DENO_DIR "$out/share/nix-repin/.deno" \
       --set PATH ${
-        lib.makeBinPath [
-          coreutils
-          git
-          nix
-          nix-prefetch-git
-          nodejs_24
-          prefetch-npm-deps
-        ]
+        lib.makeBinPath (
+          [
+            coreutils
+            git
+            nix
+            nix-prefetch-git
+            nodejs_24
+            prefetch-npm-deps
+          ]
+          # Flutter runs sw_vers on macOS.
+          ++ lib.optionals stdenv.hostPlatform.isDarwin [ darwin.DarwinTools ]
+        )
       }
 
     runHook postInstall
