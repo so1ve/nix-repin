@@ -1,5 +1,6 @@
 {
   buildDenoPackage,
+  coreutils,
   deno,
   git,
   lib,
@@ -41,6 +42,7 @@ buildDenoPackage {
       --set DENO_DIR "$out/share/nix-repin/.deno" \
       --set PATH ${
         lib.makeBinPath [
+          coreutils
           git
           nix
           nix-prefetch-git
