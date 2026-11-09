@@ -203,6 +203,10 @@ downloads. `npm.tarball` does the same for `version`. Remove `source.nix` to
 regenerate these sources. `npm.pkg` checks the dependency version in its
 generated `package.json`; remove that file to regenerate its lock.
 
+Set `refresh: true` on a GitHub archive provider to regenerate derived files
+without changing the source revision. This is useful when their contents depend
+on the repository's toolchain, such as Bun's installed dependencies.
+
 These lock providers need an archive source. Place them after `github.branch`,
 `github.tag`, `github.release` without `assets`, or `git.branch`. File paths are
 relative to the source root.
@@ -210,12 +214,28 @@ relative to the source root.
 | Provider                                  | Output                                                                                      |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `npm.lock("package-lock.json")`           | Adds `npmDepsHash` to `source.nix`.                                                         |
+| `bun.lock()`                              | Adds `bunDepsHash` by hashing the package's `node_modules` derivation.                      |
 | `cargo.lock("Cargo.lock")`                | Copies the lock file and writes `cargo-lock.nix` with `outputHashes` for Git dependencies.  |
 | `pubspec.lock({ flutter: "flutter347" })` | Resolves Flutter dependencies and writes `pubspec.lock.json` for `buildFlutterApplication`. |
 
 For Flutter, `flutter` names an SDK attribute in the repository flake's
 `nixpkgs` input. It must match the `flutter` argument in the package's
 `default.nix`.
+
+For Bun, the package's `default.nix` must accept `source`, expose its
+fixed-output dependency derivation as `node_modules`, and use
+`source.bunDepsHash` as that derivation's `outputHash`. The provider builds only
+those dependencies, using the package repository's locked nixpkgs and its
+existing install flags:
+
+```ts
+import { bun, defineSource, github } from "nix-repin";
+
+export default defineSource(
+  github.branch({ repository: "owner/repository", refresh: true }),
+  bun.lock(),
+);
+```
 
 Import the generated Cargo lock settings in the package:
 

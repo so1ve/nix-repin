@@ -20,6 +20,8 @@ const octokit = new Octokit({
 interface CommonOptions {
   files?: string[];
   repository: string;
+  /** Regenerate the archive and derived files even when its revision is current. */
+  refresh?: boolean;
 }
 
 export interface CommitOptions {
@@ -177,7 +179,7 @@ async function archive(
   options: CommonOptions,
   attributes: Record<string, string> & { rev: string },
 ): Promise<false | void> {
-  if (await source.isCurrent("rev", attributes.rev)) {
+  if (!options.refresh && await source.isCurrent("rev", attributes.rev)) {
     return false;
   }
 

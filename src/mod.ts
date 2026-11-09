@@ -1,4 +1,5 @@
 export * as aur from "./providers/aur.ts";
+export * as bun from "./providers/bun.ts";
 export * as cargo from "./providers/cargo.ts";
 export * as codeberg from "./providers/codeberg.ts";
 export * as git from "./providers/git.ts";
