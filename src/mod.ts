@@ -16,10 +16,5 @@ export * as yarn from "./providers/yarn.ts";
 export { fetchurl } from "./providers/fetchurl.ts";
 export { type CommandOptions, runCommand } from "./command.ts";
 export { copyTree } from "./files.ts";
-export { defineSource } from "./source.ts";
-export type {
-  FileSource,
-  Source,
-  SourceDefinition,
-  SourceFiles,
-} from "./source.ts";
+export { defineSource, Source } from "./source.ts";
+export type { FileSource, SourceDefinition, SourceFiles } from "./source.ts";
