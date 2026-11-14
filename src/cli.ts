@@ -9,7 +9,7 @@ try {
       help: "h",
       version: "V",
     },
-    boolean: ["help", "version"],
+    boolean: ["force", "help", "version"],
     string: ["_", "packages-root"],
     default: {
       "packages-root": "pkgs",
@@ -33,6 +33,7 @@ Usage:
 
 Options:
   --packages-root <path>  Directory containing package definitions (default: pkgs)
+  --force                Regenerate output even when the source is unchanged
   -h, --help              Show this help
   -V, --version           Show the version`);
   } else if (options.version) {
@@ -46,6 +47,7 @@ Options:
     await updatePackages(
       packagesRoot,
       options._ as string[],
+      { force: options.force },
     );
   }
 } catch (error) {

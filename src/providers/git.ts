@@ -1,6 +1,6 @@
 import { runCommand } from "../command.ts";
 import * as nix from "../nix.ts";
-import { provider, type SourceDefinition } from "../source.ts";
+import type { SourceDefinition } from "../source.ts";
 
 export interface BranchOptions {
   url: string;
@@ -10,7 +10,7 @@ export interface BranchOptions {
 
 /** Track a Git branch and generate a fetchgit source without submodules. */
 export function branch(options: BranchOptions): SourceDefinition {
-  return provider(async (source) => {
+  return async (source) => {
     const ref = options.branch ? `refs/heads/${options.branch}` : "HEAD";
     const output = await runCommand("git", [
       "ls-remote",
@@ -24,7 +24,7 @@ export function branch(options: BranchOptions): SourceDefinition {
     if (!rev) {
       throw new Error(`${options.url}: no commit found for ${ref}`);
     }
-    if (await source.isCurrent("rev", rev)) {
+    if (await source.shouldSkip(() => source.matches({ rev }))) {
       return false;
     }
 
@@ -44,5 +44,5 @@ export function branch(options: BranchOptions): SourceDefinition {
   };`,
         ),
     );
-  });
+  };
 }

@@ -1,11 +1,7 @@
 import { parse } from "@std/toml";
 
 import * as nix from "../nix.ts";
-import {
-  provider,
-  type SourceDefinition,
-  type SourceFiles,
-} from "../source.ts";
+import type { SourceDefinition, SourceFiles } from "../source.ts";
 
 interface CargoPackage {
   name: string;
@@ -68,8 +64,10 @@ ${hashes}
 }
 
 /** Copy a Cargo lock file from an archive source and generate its output hashes. */
-export function lock(path: string): SourceDefinition {
-  return provider(async (source) => {
+export function lock(
+  { path = "Cargo.lock" }: { path?: string } = {},
+): SourceDefinition {
+  return async (source) => {
     const contents = await Deno.readTextFile(source.sourceFile(path));
     const outputHashes = await Promise.all(
       gitDependencies(contents).map(async (dependency) =>
@@ -84,5 +82,5 @@ export function lock(path: string): SourceDefinition {
       [path]: contents,
       "cargo-lock.nix": renderLock(path, outputHashes),
     } satisfies SourceFiles;
-  });
+  };
 }

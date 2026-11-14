@@ -1,12 +1,7 @@
 import { Octokit } from "octokit";
 
 import * as nix from "../nix.ts";
-import {
-  provider,
-  type Source,
-  type SourceDefinition,
-  type SourceFiles,
-} from "../source.ts";
+import type { Source, SourceDefinition, SourceFiles } from "../source.ts";
 import { selectTag } from "../tags.ts";
 import { template } from "../template.ts";
 import { fetchurl } from "./fetchurl.ts";
@@ -19,8 +14,6 @@ const octokit = new Octokit({
 interface CommonOptions {
   files?: string[];
   repository: string;
-  /** Regenerate the archive and derived files even when its revision is current. */
-  refresh?: boolean;
 }
 
 export interface CommitOptions {
@@ -145,7 +138,9 @@ async function archive(
   options: CommonOptions,
   attributes: Record<string, string> & { rev: string },
 ): Promise<false | void> {
-  if (!options.refresh && await source.isCurrent("rev", attributes.rev)) {
+  if (
+    await source.shouldSkip(() => source.matches({ rev: attributes.rev }))
+  ) {
     return false;
   }
 
@@ -161,7 +156,7 @@ async function archive(
 
 /** Track the highest matching tag, including repositories without releases. */
 export function tag(options: TagOptions): SourceDefinition {
-  return provider(async (source) => {
+  return async (source) => {
     const [owner, repo] = parseRepository(options.repository);
     const tags = await octokit.paginate(octokit.rest.repos.listTags, {
       owner,
@@ -173,11 +168,11 @@ export function tag(options: TagOptions): SourceDefinition {
       options,
     );
     return archive(source, options, { version, rev: tag });
-  });
+  };
 }
 
 export function release(options: ReleaseOptions): SourceDefinition {
-  return provider(async (source) => {
+  return async (source) => {
     const [owner, repository] = parseRepository(options.repository);
     const releases = (await octokit.paginate(octokit.rest.repos.listReleases, {
       owner,
@@ -219,12 +214,12 @@ export function release(options: ReleaseOptions): SourceDefinition {
     }
 
     source.addFiles(additionalFiles(owner, repository, tag, options));
-  });
+  };
 }
 
 export function branch(options: BranchOptions): SourceDefinition {
-  return provider(async (source) => {
+  return async (source) => {
     const { rev, date } = await latestCommit(options);
     return archive(source, options, { date, rev });
-  });
+  };
 }

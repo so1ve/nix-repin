@@ -1,48 +1,8 @@
 import { deepStrictEqual, rejects } from "node:assert/strict";
 
 import * as nix from "../nix.ts";
+import { generateSource, withCommands } from "../test_support.ts";
 import { image, tag } from "./oci.ts";
-
-interface CommandResult {
-  stdout?: string;
-  stderr?: string;
-  code?: number;
-}
-
-async function withCommands(
-  respond: (program: string, args: string[]) => CommandResult,
-  run: () => Promise<void>,
-) {
-  const originalCommand = Deno.Command;
-  const encoder = new TextEncoder();
-  Deno.Command = class extends originalCommand {
-    #program: string;
-    #args: string[];
-
-    constructor(program: string | URL, options: Deno.CommandOptions = {}) {
-      super(program, options);
-      this.#program = String(program);
-      this.#args = options.args ?? [];
-    }
-
-    override output(): Promise<Deno.CommandOutput> {
-      const result = respond(this.#program, this.#args);
-      const code = result.code ?? 0;
-      return Promise.resolve({
-        code,
-        success: code === 0,
-        signal: null,
-        stdout: encoder.encode(result.stdout ?? ""),
-        stderr: encoder.encode(result.stderr ?? ""),
-      });
-    }
-  };
-  try {
-    await run();
-  } finally {
-    Deno.Command = originalCommand;
-  }
-}
 
 Deno.test("OCI refreshes a moving tag even when source.nix already exists", async () => {
   const directory = await Deno.makeTempDir({ prefix: "nix-repin-oci-test-" });
@@ -55,14 +15,13 @@ Deno.test("OCI refreshes a moving tag even when source.nix already exists", asyn
       return { stdout: digest };
     }, async () => {
       const definition = tag({ repository, tag: "latest" });
-      const context = { packageDirectory: directory };
-      const first = await definition(context);
+      const first = await generateSource(definition, directory);
       await Deno.writeTextFile(
         `${directory}/source.nix`,
         first["source.nix"] as string,
       );
       digest = `sha256:${"b".repeat(64)}`;
-      deepStrictEqual(await definition(context), {
+      deepStrictEqual(await generateSource(definition, directory), {
         "source.nix": `${nix.HEADER}{
   image = "registry.example:5000/team/image:latest@${digest}";
 }
@@ -88,11 +47,11 @@ Deno.test("OCI selects the highest matching tag using semantic version order", a
     deepStrictEqual(args, ["digest", "--", `${repository}:v1.10.0`]);
     return { stdout: digest };
   }, async () => {
-    const files = await image({
+    const files = await generateSource(image({
       repository,
       tagPattern: "v1\\.[0-9]+\\.[0-9]+(?:-rc\\.[0-9]+)?",
       stripPrefix: "v",
-    })({ packageDirectory: "/tmp/package" });
+    }));
     deepStrictEqual(files, {
       "source.nix": `${nix.HEADER}{
   image = "registry.example/team/image:v1.10.0@${digest}";
@@ -115,10 +74,10 @@ Deno.test("OCI reports a missing version instead of generating a reference", asy
     }, async () => {
       await rejects(
         async () =>
-          await image({
+          await generateSource(image({
             repository: "registry.example/team/image",
             tagPattern: "v1\\.[0-9]+\\.[0-9]+",
-          })({ packageDirectory: "/tmp/package" }),
+          })),
         /registry\.example\/team\/image: no matching tag found/,
       );
     });
@@ -142,7 +101,7 @@ Deno.test("OCI propagates registry failures from tag and digest lookup", async (
         ]
       ) {
         await rejects(
-          async () => await definition({ packageDirectory: "/tmp/package" }),
+          () => generateSource(definition),
           /crane: UNAUTHORIZED: access denied/,
         );
       }

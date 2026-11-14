@@ -1,14 +1,10 @@
 import * as path from "@std/path";
 
+import { readTextFileIfExists } from "./files.ts";
 import * as nix from "./nix.ts";
 
 export type FileSource = string | Uint8Array | URL;
 export type SourceFiles = Record<string, FileSource>;
-
-export interface SourceContext {
-  /** Absolute path containing the source definition and generated files. */
-  readonly packageDirectory: string;
-}
 
 interface NixSource {
   attributes: Record<string, string>;
@@ -17,28 +13,47 @@ interface NixSource {
 }
 
 /** Mutable source state shared by providers composed with defineSource. */
-export class Source implements SourceContext {
-  readonly packageDirectory: string;
+export class Source {
   #files: SourceFiles = {};
   #nixSource: NixSource | undefined;
 
-  constructor(context: SourceContext) {
-    this.packageDirectory = context.packageDirectory;
+  constructor(
+    readonly packageDirectory: string,
+    private readonly force = false,
+  ) {}
+
+  /** Compare attributes against the existing generated source.nix. */
+  async matches(attributes: Record<string, string>): Promise<boolean> {
+    const previous = await readTextFileIfExists(
+      path.join(this.packageDirectory, "source.nix"),
+    );
+    if (previous === undefined) return false;
+
+    return Object.entries(attributes).every(([name, value]) =>
+      previous.includes(`\n  ${name} = ${nix.string(value)};\n`)
+    );
   }
 
-  /** Check an attribute in the existing generated source.nix. */
-  async isCurrent(name: string, value: string): Promise<boolean> {
-    try {
-      const current = await Deno.readTextFile(
-        path.join(this.packageDirectory, "source.nix"),
-      );
-      return current.includes(`\n  ${name} = ${nix.string(value)};\n`);
-    } catch (error) {
-      if (error instanceof Deno.errors.NotFound) {
-        return false;
-      }
-      throw error;
+  /** Skip unchanged sources unless forced; forcing bypasses the check itself. */
+  async shouldSkip(
+    unchanged: () => boolean | Promise<boolean>,
+  ): Promise<boolean> {
+    return !this.force && await unchanged();
+  }
+
+  /** Run a definition, collecting its files or discarding the update on false. */
+  async apply(definition: SourceDefinition): Promise<boolean> {
+    const files = await definition(this);
+    if (files === false) {
+      this.#files = {};
+      this.#nixSource = undefined;
+      return false;
     }
+    if (files !== undefined) {
+      this.addFiles(files);
+    }
+
+    return true;
   }
 
   addFiles(files: SourceFiles): void {
@@ -99,63 +114,21 @@ export class Source implements SourceContext {
   }
 }
 
-export type SourceDefinition = (
-  context: SourceContext,
-) => SourceFiles | Promise<SourceFiles>;
-
-type Provider = (source: Source) =>
+export type SourceDefinition = (source: Source) =>
   | void
   | false
   | SourceFiles
   | Promise<void | false | SourceFiles>;
 
-const providerRun = Symbol("nix-repin.provider-run");
-
-type ComposableSourceDefinition = SourceDefinition & {
-  [providerRun]?: Provider;
-};
-
-async function applyProvider(
-  source: Source,
-  definition: SourceDefinition,
-): Promise<boolean> {
-  const provider = (definition as ComposableSourceDefinition)[providerRun];
-  const files = provider ? await provider(source) : await definition(source);
-  if (files === false) {
-    return false;
-  }
-  if (files !== undefined) {
-    source.addFiles(files);
-  }
-  return true;
-}
-
-/** Create a composable provider. Return false to skip the entire source update. */
-export function provider(run: Provider): SourceDefinition {
-  const definition: ComposableSourceDefinition = async (context) => {
-    const source = new Source(context);
-    const files = await run(source);
-    if (files === false) {
-      return {};
-    }
-    if (files !== undefined) {
-      source.addFiles(files);
-    }
-    return source.files();
-  };
-  definition[providerRun] = run;
-  return definition;
-}
-
 /** Compose providers so they share one source archive and generated output. */
 export function defineSource(
   ...definitions: SourceDefinition[]
 ): SourceDefinition {
-  return provider(async (source) => {
+  return async (source) => {
     for (const definition of definitions) {
-      if (!await applyProvider(source, definition)) {
+      if (!await source.apply(definition)) {
         return false;
       }
     }
-  });
+  };
 }

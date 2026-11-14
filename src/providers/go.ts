@@ -1,7 +1,9 @@
-import { type SourceDefinition } from "../source.ts";
+import type { SourceDefinition } from "../source.ts";
 import { dependencyHash } from "./dependency.ts";
 
-/** Hash the package's goModules derivation with its repository's toolchain. */
-export function lock(): SourceDefinition {
-  return dependencyHash("goModules", "vendorHash");
+/** Update vendorHash from the package's goModules derivation. */
+export function lock(
+  { attribute = "goModules" }: { attribute?: string } = {},
+): SourceDefinition {
+  return dependencyHash(attribute, "vendorHash");
 }

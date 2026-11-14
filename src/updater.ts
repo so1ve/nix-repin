@@ -1,6 +1,6 @@
 import * as path from "@std/path";
 
-import type { SourceDefinition } from "./source.ts";
+import { Source, type SourceDefinition } from "./source.ts";
 import { writeFile } from "./write.ts";
 
 async function packageDirectories(
@@ -45,19 +45,22 @@ function filePath(packageDirectory: string, relativePath: string): string {
   return file;
 }
 
-async function updatePackage(packageDirectory: string): Promise<void> {
+async function updatePackage(
+  packageDirectory: string,
+  force: boolean,
+): Promise<void> {
   const name = path.basename(packageDirectory);
   const definition: SourceDefinition = (await import(
     path.toFileUrl(path.resolve(packageDirectory, "source.ts")).href
   )).default;
-  const files = await definition({
-    packageDirectory: path.resolve(packageDirectory),
-  });
+  const source = new Source(path.resolve(packageDirectory), force);
+  await source.apply(definition);
+
   const changed = (await Promise.all(
-    Object.entries(files).map(([relativePath, source]) => {
+    Object.entries(source.files()).map(([relativePath, content]) => {
       const target = filePath(packageDirectory, relativePath);
 
-      return writeFile(target, source);
+      return writeFile(target, content);
     }),
   )).some(Boolean);
 
@@ -69,8 +72,11 @@ async function updatePackage(packageDirectory: string): Promise<void> {
 export async function updatePackages(
   packagesRoot: string,
   packages: string[],
+  { force = false }: { force?: boolean } = {},
 ): Promise<void> {
   const directories = await packageDirectories(packagesRoot, packages);
 
-  await Promise.all(directories.map(updatePackage));
+  await Promise.all(
+    directories.map((directory) => updatePackage(directory, force)),
+  );
 }

@@ -1,12 +1,9 @@
 import * as path from "@std/path";
 
 import { runCommand } from "../command.ts";
+import { readTextFileIfExists } from "../files.ts";
 import * as nix from "../nix.ts";
-import {
-  provider,
-  type SourceDefinition,
-  type SourceFiles,
-} from "../source.ts";
+import type { SourceDefinition, SourceFiles } from "../source.ts";
 import { fetchurl } from "./fetchurl.ts";
 
 export interface PackageOptions {
@@ -55,10 +52,12 @@ export async function writeLock(
 }
 
 /** Generate npmDepsHash from a package-lock.json in an archive source. */
-export function lock(path: string): SourceDefinition {
-  return provider(async (source) => {
+export function lock(
+  { path = "package-lock.json" }: { path?: string } = {},
+): SourceDefinition {
+  return async (source) => {
     source.addNixAttribute("npmDepsHash", await hash(source.sourceFile(path)));
-  });
+  };
 }
 
 function packageJson(name: string, version: string): string {
@@ -85,21 +84,15 @@ async function currentVersion(
   packageDirectory: string,
   name: string,
 ): Promise<string | undefined> {
-  try {
-    const manifest = JSON.parse(
-      await Deno.readTextFile(`${packageDirectory}/package.json`),
-    ) as {
-      dependencies: Record<string, string>;
-    };
+  const contents = await readTextFileIfExists(
+    `${packageDirectory}/package.json`,
+  );
+  if (contents === undefined) return undefined;
+  const manifest = JSON.parse(contents) as {
+    dependencies: Record<string, string>;
+  };
 
-    return manifest.dependencies[name];
-  } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
-      return undefined;
-    }
-
-    throw error;
-  }
+  return manifest.dependencies[name];
 }
 
 async function packageMetadata(
@@ -145,35 +138,37 @@ async function lockedPackage(
 export function pkg(options: PackageOptions): SourceDefinition {
   const registry = options.registry ?? defaultRegistry;
 
-  return provider(async (source) => {
+  return async (source) => {
     const { version } = await packageMetadata(
       options.name,
       options.distTag ?? "latest",
       registry,
     );
     if (
-      await currentVersion(source.packageDirectory, options.name) === version
+      await source.shouldSkip(async () =>
+        await currentVersion(source.packageDirectory, options.name) === version
+      )
     ) {
       return false;
     }
 
     const manifest = packageJson(options.name, version);
     return lockedPackage(version, registry, manifest);
-  });
+  };
 }
 
 /** Track an npm dist-tag and generate a fetchurl source for its published tarball. */
 export function tarball(options: PackageOptions): SourceDefinition {
-  return provider(async (source) => {
+  return async (source) => {
     const { version, dist } = await packageMetadata(
       options.name,
       options.distTag ?? "latest",
       options.registry ?? defaultRegistry,
     );
-    if (await source.isCurrent("version", version)) {
+    if (await source.shouldSkip(() => source.matches({ version }))) {
       return false;
     }
 
     return fetchurl({ version, urls: { default: dist.tarball } });
-  });
+  };
 }

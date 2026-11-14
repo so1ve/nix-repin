@@ -1,9 +1,9 @@
 # nix-repin
 
-`nix-repin` updates Nix package sources from TypeScript definitions. Each package
-has a `source.ts` that describes where to get its source and which dependency
-hashes it needs. Generated files are written beside it for use in your Nix
-package definition.
+`nix-repin` updates Nix package sources from TypeScript definitions. Each
+package has a `source.ts` that describes where to get its source and which
+dependency hashes it needs. Generated files are written beside it for use in
+your Nix package definition.
 
 ## Usage
 
@@ -27,10 +27,11 @@ nix-repin program
 
 This writes `pkgs/program/source.nix` with `version`, `rev`, and `src`. Load it
 with `pkgs.callPackage ./pkgs/program/source.nix { }` and use its `version` and
-`src` in your package derivation. Set `GITHUB_TOKEN` or `GH_TOKEN` to authenticate
-GitHub requests.
+`src` in your package derivation. Set `GITHUB_TOKEN` or `GH_TOKEN` to
+authenticate GitHub requests.
 
-You can also update several packages at once or use a different package directory:
+You can also update several packages at once or use a different package
+directory:
 
 ```sh
 # Update all packages with a pkgs/*/source.ts definition
@@ -43,7 +44,7 @@ nix-repin xwayland-satellite yanhekt-autoslides
 nix-repin --packages-root /path/to/repository/pkgs
 ```
 
-If the package also needs a dependency hash, add a lock provider with
+If the package also needs a dependency hash, add another step with
 `defineSource`:
 
 ```ts
@@ -51,7 +52,7 @@ import { defineSource, github, npm } from "nix-repin";
 
 export default defineSource(
   github.release({ repository: "owner/repository", stripPrefix: "v" }),
-  npm.lock("app/package-lock.json"),
+  npm.lock({ path: "app/package-lock.json" }),
 );
 ```
 
@@ -59,16 +60,21 @@ export default defineSource(
 generated output. Here, `github.release` fetches the source, then `npm.lock`
 reads `app/package-lock.json` from it and adds `npmDepsHash` to `source.nix`.
 
-When the GitHub source is unchanged, the update stops before running the lock
-provider. Set `refresh: true` on `github.release` to regenerate the output after
-changing the definition.
+Git, GitHub archive, and npm providers skip the update when their tracked
+revision or version is unchanged. After changing `source.ts` or the dependency
+setup in `default.nix`, force regeneration for that run:
+
+```sh
+nix-repin --force program
+```
 
 ## Providers
 
 ### Sources
 
-Choose a provider for the upstream you want to track. It can be exported directly
-from `source.ts`, as in the first example, or used first in `defineSource`.
+Choose a provider for the upstream you want to track. It can be exported
+directly from `source.ts`, as in the first example, or used first in
+`defineSource`.
 
 <details>
 <summary>GitHub</summary>
@@ -265,44 +271,33 @@ defaults to universal when `platforms` is omitted.
 
 ### Dependencies
 
-Add these providers after `github.branch`, `github.tag`, `github.release` without
-`assets`, or `git.branch` in `defineSource`. Those source providers supply the
-tree needed to read lock files or build dependencies. Paths passed to `npm.lock`
-and `cargo.lock` are relative to that tree.
+Add dependency providers after `github.branch`, `github.tag`, `github.release`
+without `assets`, or `git.branch` in `defineSource`. Each ecosystem exposes
+`.lock(options)`; omit the options to use the defaults. Flutter requires an SDK
+selection that matches your package.
 
-An unchanged GitHub archive or Git checkout skips the remaining providers.
-GitHub archive providers accept `refresh: true` to force regeneration.
+| Provider                                  | Generated output               |
+| ----------------------------------------- | ------------------------------ |
+| `npm.lock()`                              | `npmDepsHash` in `source.nix`  |
+| `bun.lock()`                              | `bunDepsHash` in `source.nix`  |
+| `go.lock()`                               | `vendorHash` in `source.nix`   |
+| `pnpm.lock()`                             | `pnpmDepsHash` in `source.nix` |
+| `yarn.lock()`                             | `yarnDepsHash` in `source.nix` |
+| `cargo.lock()`                            | `Cargo.lock`, `cargo-lock.nix` |
+| `pubspec.lock({ flutter: "flutter347" })` | `pubspec.lock.json`            |
 
-| Provider                                  | Output                          |
-| ----------------------------------------- | ------------------------------- |
-| `npm.lock("package-lock.json")`           | `npmDepsHash` in `source.nix`   |
-| `bun.lock()`                              | `bunDepsHash` in `source.nix`   |
-| `go.lock()`                               | `vendorHash` in `source.nix`    |
-| `pnpm.lock()`                             | `pnpmDepsHash` in `source.nix`  |
-| `cargo.lock("Cargo.lock")`                | `Cargo.lock`, `cargo-lock.nix`  |
-| `pubspec.lock({ flutter: "flutter347" })` | `pubspec.lock.json` for Flutter |
-
-Bun, Go, and PNPM calculate their hashes by building a dependency derivation from
-the package's `default.nix`, using the enclosing flake's `nixpkgs` input. Your
-`default.nix` must accept a `source` argument and use the generated hash as shown
-below.
-
-<details>
-<summary>Bun</summary>
+npm and Cargo read lock files from the fetched source tree. Their `path` option
+defaults to `package-lock.json` and `Cargo.lock`, respectively:
 
 ```ts
-import { bun, defineSource, github } from "nix-repin";
-
-export default defineSource(
-  github.branch({ repository: "owner/repository", refresh: true }),
-  bun.lock(),
-);
+npm.lock({ path: "app/package-lock.json" });
+cargo.lock({ path: "backend/Cargo.lock" });
 ```
 
-Expose a fixed-output `node_modules` derivation from `default.nix` with
-`outputHash = source.bunDepsHash`.
-
-</details>
+Bun, Go, PNPM, and Yarn build a dependency derivation from your package's
+`default.nix`, using the enclosing flake's `nixpkgs` input. The package must
+accept a `source` argument and use the generated hash as shown below. Toolchain
+versions, fetcher options, and patches stay in `default.nix`.
 
 <details>
 <summary>Go</summary>
@@ -311,39 +306,84 @@ Expose a fixed-output `node_modules` derivation from `default.nix` with
 import { defineSource, github, go } from "nix-repin";
 
 export default defineSource(
-  github.tag({ repository: "owner/repository", stripPrefix: "v" }),
+  github.release({ repository: "owner/repository", stripPrefix: "v" }),
   go.lock(),
 );
 ```
 
-Set `vendorHash = source.vendorHash` in `buildGoModule` in `default.nix`.
+Set `vendorHash = source.vendorHash` in `buildGoModule`. The provider builds the
+package's `goModules` derivation to calculate that hash.
 
 </details>
 
 <details>
-<summary>PNPM</summary>
+<summary>Bun</summary>
+
+Use `bun.lock()` and expose a fixed-output `node_modules` derivation from
+`default.nix` with `outputHash = source.bunDepsHash`.
+
+</details>
+
+<details>
+<summary>PNPM and nested derivations</summary>
+
+Use `pnpm.lock()` when `default.nix` exposes `pnpmDeps`. Use
+`source.pnpmDepsHash` as that derivation's hash.
+
+For a nested derivation, set `attribute` to its path in the value returned by
+`default.nix`:
 
 ```ts
 import { defineSource, github, go, pnpm } from "nix-repin";
 
 export default defineSource(
   github.release({ repository: "pocket-id/pocket-id", stripPrefix: "v" }),
-  pnpm.lock("frontend.pnpmDeps"),
+  pnpm.lock({ attribute: "frontend.pnpmDeps" }),
   go.lock(),
 );
 ```
 
-Use `source.pnpmDepsHash` for the dependency hash in `default.nix`. The argument
-to `pnpm.lock` selects a derivation attribute, here `frontend.pnpmDeps`; it
-defaults to `pnpmDeps`.
+Bun, Go, and Yarn also accept `attribute` when your package exposes the
+dependency derivation under a different name or path. The generated hash field
+stays the same.
+
+</details>
+
+<details>
+<summary>Yarn</summary>
+
+```ts
+import { defineSource, github, yarn } from "nix-repin";
+
+export default defineSource(
+  github.release({ repository: "owner/repository", stripPrefix: "v" }),
+  yarn.lock(),
+);
+```
+
+Expose the offline cache from `default.nix` and use `source.yarnDepsHash`:
+
+```nix
+yarnOfflineCache = fetchYarnDeps {
+  yarnLock = source.src + "/yarn.lock";
+  hash = source.yarnDepsHash;
+};
+```
+
+This also works with `fetchYarnBerryDeps`. For a package that exposes its cache
+as `offlineCache`, use `yarn.lock({ attribute: "offlineCache" })`. Any required
+Yarn Berry `missingHashes` file must be supplied by the package definition; this
+provider updates the cache hash. See the
+[Nixpkgs Yarn documentation](https://nixos.org/manual/nixpkgs/unstable/#javascript-yarn-v1)
+for package setup.
 
 </details>
 
 <details>
 <summary>Cargo</summary>
 
-`cargo.lock("Cargo.lock")` copies the upstream lock file and generates
-`cargo-lock.nix` with hashes for its Git dependencies. Use it in your Rust
+`cargo.lock()` copies the upstream `Cargo.lock` and generates `cargo-lock.nix`
+with hashes for Git dependencies. Use the generated files in your Rust
 derivation:
 
 ```nix
@@ -355,10 +395,10 @@ cargoDeps = rustPlatform.importCargoLock (import ./cargo-lock.nix);
 <details>
 <summary>Flutter</summary>
 
-`pubspec.lock` runs `flutter pub get` in a copy of the source tree and converts
-the resulting lock file to `pubspec.lock.json`. Its `flutter` option names an SDK
-in the repository flake's `nixpkgs` input and must match the package's `flutter`
-argument.
+`pubspec.lock({ flutter: "flutter347" })` runs `flutter pub get` in a copy of
+the source tree and converts the resulting lock file to `pubspec.lock.json`. Its
+`flutter` option selects an SDK from the repository flake's `nixpkgs` input and
+must match the package's `flutter` argument.
 
 </details>
 
@@ -390,9 +430,27 @@ to the package directory; content can be text, a `Uint8Array`, or a `URL` to
 download. These functions can also be combined with other providers through
 `defineSource`.
 
-To read or modify the shared `Source`, wrap your function with `provider`.
-Returning `false` from that function skips the entire update and discards the
-output collected so far.
+Each function receives the shared `Source` as its argument. It can read files
+from the fetched tree with `source.sourceFile(path)` or add Nix attributes with
+`source.addNixAttribute(name, value)`. Returning `false` skips the entire update
+and discards the output collected so far.
+
+Use `source.matches({ rev })` to compare attributes with the existing generated
+`source.nix`. It returns `true` when all supplied values match, and `false` if
+the file or an attribute is missing. You can compare several attributes at once,
+such as `source.matches({ rev, version })`.
+
+To skip an unchanged update, use that comparison with `source.shouldSkip`:
+
+```ts
+if (await source.shouldSkip(() => source.matches({ rev }))) {
+  return false;
+}
+```
+
+With `--force`, `shouldSkip` returns `false` without running its check.
+`matches` always reports the actual comparison result. For other stored output,
+pass your own comparison function to `shouldSkip`.
 
 The helpers below cover common tasks when writing a custom source.
 

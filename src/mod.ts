@@ -12,14 +12,14 @@ export * as oci from "./providers/oci.ts";
 export * as openvsx from "./providers/openvsx.ts";
 export * as pnpm from "./providers/pnpm.ts";
 export * as pubspec from "./providers/pubspec.ts";
+export * as yarn from "./providers/yarn.ts";
 export { fetchurl } from "./providers/fetchurl.ts";
 export { type CommandOptions, runCommand } from "./command.ts";
 export { copyTree } from "./files.ts";
-export { defineSource, provider } from "./source.ts";
+export { defineSource } from "./source.ts";
 export type {
   FileSource,
   Source,
-  SourceContext,
   SourceDefinition,
   SourceFiles,
 } from "./source.ts";

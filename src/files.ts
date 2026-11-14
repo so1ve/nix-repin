@@ -1,5 +1,16 @@
 import * as path from "@std/path";
 
+export async function readTextFileIfExists(
+  file: string,
+): Promise<string | undefined> {
+  try {
+    return await Deno.readTextFile(file);
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) return undefined;
+    throw error;
+  }
+}
+
 /** Copy a tree into a writable directory, preserving symlinks and modes. */
 export async function copyTree(from: string, to: string): Promise<void> {
   const stat = await Deno.lstat(from);

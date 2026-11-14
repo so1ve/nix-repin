@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 
 import { runCommand } from "../command.ts";
 import * as nix from "../nix.ts";
-import { provider, type SourceDefinition } from "../source.ts";
+import type { SourceDefinition } from "../source.ts";
 
+/** Build a dependency derivation and write its actual fixed-output hash. */
 export function dependencyHash(
-  derivationAttribute: string,
+  attribute: string,
   hashAttribute: string,
 ): SourceDefinition {
-  return provider(async (source) => {
+  return async (source) => {
     const root = await nix.findFlakeRoot(source.packageDirectory);
     const generated = source.files()["source.nix"];
     assert(
@@ -30,7 +31,7 @@ export function dependencyHash(
 in
 (pkgs.callPackage ${nix.string(`${source.packageDirectory}/default.nix`)} {
   inherit source;
-}).${derivationAttribute}`;
+}).${attribute}`;
 
       const derivation = await runCommand("nix", [
         "eval",
@@ -64,5 +65,5 @@ in
     } finally {
       await Deno.remove(directory, { recursive: true });
     }
-  });
+  };
 }
