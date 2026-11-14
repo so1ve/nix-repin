@@ -8,6 +8,7 @@ export * as go from "./providers/go.ts";
 export * as marketplace from "./providers/marketplace.ts";
 export * as nix from "./nix.ts";
 export * as npm from "./providers/npm.ts";
+export * as oci from "./providers/oci.ts";
 export * as openvsx from "./providers/openvsx.ts";
 export * as pubspec from "./providers/pubspec.ts";
 export { fetchurl } from "./providers/fetchurl.ts";

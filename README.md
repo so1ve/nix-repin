@@ -20,9 +20,10 @@ Set `GITHUB_TOKEN` or `GH_TOKEN` to authenticate GitHub requests.
 
 ## Providers
 
-### GitHub
+<details>
+<summary>GitHub</summary>
 
-Track the release archive with the highest version:
+Track the highest stable release:
 
 ```ts
 import { github } from "nix-repin";
@@ -33,15 +34,9 @@ export default github.release({
 });
 ```
 
-`github.release` selects published releases, excluding prereleases unless
-`includePrerelease: true` is set. After removing `stripPrefix`, tags are sorted
-by SemVer: a stable version ranks above its `alpha`, `beta`, and `rc` versions.
-If any matching tag cannot be parsed as SemVer, the selection uses Nix's
-`builtins.compareVersions` for all candidates. Release dates do not affect
-sorting.
+Set `includePrerelease: true` to include previews.
 
-Use `github.tag` to select from repository tags, including repositories without
-releases:
+Select repository tags:
 
 ```ts
 export default github.tag({
@@ -51,10 +46,8 @@ export default github.tag({
 });
 ```
 
-Both providers accept `tagPattern`, a regular expression matched against the
-whole tag before sorting. Omit it to consider all tags. `github.tag` has no
-release metadata; use the pattern to exclude preview tags. `stripPrefix` removes
-the given prefix from the selected tag's version and fails if it is absent.
+`tagPattern` matches whole tags; `stripPrefix` removes the prefix from
+`version`.
 
 To download release assets, map Nix systems to filename patterns:
 
@@ -69,11 +62,10 @@ export default github.release({
 });
 ```
 
-Patterns are regular expressions matched against the whole filename. The
-`{version}`, `{tag}`, and `{system}` placeholders are substituted literally. Use
-`default` for a platform-independent asset.
+Asset regexes match whole filenames and support `{version}`, `{tag}`, and
+`{system}`. Use `default` for a shared asset.
 
-Track a branch and copy files from the resolved revision:
+Track a branch and copy files:
 
 ```ts
 export default github.branch({
@@ -83,12 +75,13 @@ export default github.branch({
 });
 ```
 
-Omit `branch` to use the repository's default branch. Set `before` to an ISO
-8601 timestamp to select the newest commit before that time.
+Omit `branch` to follow the default branch. `before` selects commits before an
+ISO 8601 timestamp. All three providers accept `files`.
 
-### Git
+</details>
 
-Track a branch from any Git remote, including Gists and Codeberg:
+<details>
+<summary>Git</summary>
 
 ```ts
 import { git } from "nix-repin";
@@ -99,13 +92,49 @@ export default git.branch({
 });
 ```
 
-Omit `branch` to follow the remote's `HEAD`. This generates a `fetchgit` source
-with `rev` and `date` (`YYYY-MM-DD`), without submodules. Later providers can
-read files from the checkout.
+Generates `rev`, `date`, and a `fetchgit` source without submodules. Omit
+`branch` to follow `HEAD`.
 
-### npm
+</details>
 
-Track an npm package's `latest` tag:
+<details>
+<summary>OCI container images</summary>
+
+Follow a tag and pin the image by digest:
+
+```ts
+import { oci } from "nix-repin";
+
+export default oci.tag({
+  repository: "docker.io/library/traefik",
+  tag: "v3",
+});
+```
+
+Use `oci.image` to select the highest matching version:
+
+```ts
+export default oci.image({
+  repository: "docker.io/library/traefik",
+  tagPattern: "v3\\.[0-9]+\\.[0-9]+",
+  stripPrefix: "v",
+});
+```
+
+```sh
+nix-repin --packages-root images
+```
+
+Import the generated `repository:tag@digest` reference:
+
+```nix
+Image = (import ./images/traefik/source.nix).image;
+```
+
+</details>
+
+<details>
+<summary>npm</summary>
 
 ```ts
 import { npm } from "nix-repin";
@@ -115,22 +144,20 @@ export default npm.pkg({
 });
 ```
 
-This generates `package.json`, `package-lock.json`, and a `source.nix` exporting
-`version` and `npmDepsHash`. Set `distTag` to track another tag or `registry` to
-use another registry.
+Generates `package.json`, `package-lock.json`, and `source.nix` with `version`
+and `npmDepsHash`. `distTag` defaults to `latest`; `registry` overrides the
+registry.
 
-To download the published tarball, use `npm.tarball`:
+Use `npm.tarball` with the same options to generate a `fetchurl` source instead.
 
 ```ts
 export default npm.tarball({ name: "@cnbcool/cnb-cli" });
 ```
 
-It accepts the same options and generates a `source.nix` exporting `version` and
-a `fetchurl` source. It does not generate an npm lock file.
+</details>
 
-### AUR
-
-Use an AUR package's upstream version to fill download URL templates:
+<details>
+<summary>AUR</summary>
 
 ```ts
 import { aur } from "nix-repin";
@@ -144,13 +171,13 @@ export default aur.pkg({
 });
 ```
 
-The provider removes the Arch epoch and package release suffix from the version.
-URLs support `{version}` and `{system}` placeholders. Use Nix system names for
-platform-specific downloads or `default` for a shared source.
+`{version}` excludes the Arch epoch and package release suffix. URL keys are Nix
+systems or `default`; URLs also accept `{system}`.
 
-### VS Code extensions
+</details>
 
-Download a VSIX from Open VSX:
+<details>
+<summary>VS Code extensions</summary>
 
 ```ts
 import { openvsx } from "nix-repin";
@@ -161,10 +188,8 @@ export default openvsx.extension({
 });
 ```
 
-The Open VSX provider supports only universal builds. It selects the newest
-stable build and generates `source.nix` with `version` and `src`.
-
-For Visual Studio Marketplace, map Nix systems to extension platforms:
+Open VSX supports universal builds. For platform-specific builds, use
+Marketplace:
 
 ```ts
 import { marketplace } from "nix-repin";
@@ -179,14 +204,15 @@ export default marketplace.extension({
 });
 ```
 
-The Marketplace provider selects the newest stable version available for every
-requested platform. Omit `platforms` for a universal extension. Both providers
-accept `includePrerelease: true` to include previews.
+Both generate `version` and `src` for the newest stable release available on all
+requested platforms. Set `includePrerelease: true` for previews. Marketplace
+defaults to universal when `platforms` is omitted.
+
+</details>
 
 ## Composing providers
 
-`defineSource` runs providers in order, sharing one archive and its generated
-files. For example, add `npmDepsHash` to a GitHub source:
+`defineSource` runs providers in order. Add a dependency hash after its source:
 
 ```ts
 import { defineSource, github, npm } from "nix-repin";
@@ -197,37 +223,22 @@ export default defineSource(
 );
 ```
 
-If a GitHub archive or Git checkout's `rev` matches the existing `source.nix`,
-the entire `defineSource` update is skipped, including later providers and file
-downloads. `npm.tarball` does the same for `version`. Remove `source.nix` to
-regenerate these sources. `npm.pkg` checks the dependency version in its
-generated `package.json`; remove that file to regenerate its lock.
+Lock providers require `github.branch`, `github.tag`, `github.release` without
+`assets`, or `git.branch` first. Paths are relative to that source.
 
-Set `refresh: true` on a GitHub archive provider to regenerate derived files
-without changing the source revision. This is useful when their contents depend
-on the repository's toolchain, such as Bun's installed dependencies.
+Unchanged GitHub archives and Git checkouts skip the remaining providers. Set
+`refresh: true` on a GitHub archive provider to force regeneration.
 
-These lock providers need an archive source. Place them after `github.branch`,
-`github.tag`, `github.release` without `assets`, or `git.branch`. File paths are
-relative to the source root.
+| Provider                                  | Output                          |
+| ----------------------------------------- | ------------------------------- |
+| `npm.lock("package-lock.json")`           | `npmDepsHash`                   |
+| `bun.lock()`                              | `bunDepsHash`                   |
+| `go.lock()`                               | `vendorHash`                    |
+| `cargo.lock("Cargo.lock")`                | `Cargo.lock`, `cargo-lock.nix`  |
+| `pubspec.lock({ flutter: "flutter347" })` | `pubspec.lock.json` for Flutter |
 
-| Provider                                  | Output                                                                                      |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `npm.lock("package-lock.json")`           | Adds `npmDepsHash` to `source.nix`.                                                         |
-| `bun.lock()`                              | Adds `bunDepsHash` by hashing the package's `node_modules` derivation.                      |
-| `go.lock()`                               | Adds `vendorHash` by hashing the package's `goModules` derivation.                          |
-| `cargo.lock("Cargo.lock")`                | Copies the lock file and writes `cargo-lock.nix` with `outputHashes` for Git dependencies.  |
-| `pubspec.lock({ flutter: "flutter347" })` | Resolves Flutter dependencies and writes `pubspec.lock.json` for `buildFlutterApplication`. |
-
-For Flutter, `flutter` names an SDK attribute in the repository flake's
-`nixpkgs` input. It must match the `flutter` argument in the package's
-`default.nix`.
-
-For Bun, the package's `default.nix` must accept `source`, expose its
-fixed-output dependency derivation as `node_modules`, and use
-`source.bunDepsHash` as that derivation's `outputHash`. The provider builds only
-those dependencies, using the package repository's locked nixpkgs and its
-existing install flags:
+<details>
+<summary>Bun</summary>
 
 ```ts
 import { bun, defineSource, github } from "nix-repin";
@@ -238,10 +249,13 @@ export default defineSource(
 );
 ```
 
-For Go, the package's `default.nix` must accept `source` and use
-`source.vendorHash` in `buildGoModule`. The provider builds only `goModules`,
-using the repository's locked nixpkgs and the package's dependency-fetching
-configuration:
+`default.nix` must accept `source` and expose a fixed-output `node_modules`
+derivation with `outputHash = source.bunDepsHash`.
+
+</details>
+
+<details>
+<summary>Go</summary>
 
 ```ts
 import { defineSource, github, go } from "nix-repin";
@@ -252,17 +266,31 @@ export default defineSource(
 );
 ```
 
-Import the generated Cargo lock settings in the package:
+`default.nix` must accept `source` and set `vendorHash = source.vendorHash` in
+`buildGoModule`.
+
+</details>
+
+<details>
+<summary>Cargo</summary>
 
 ```nix
 cargoDeps = rustPlatform.importCargoLock (import ./cargo-lock.nix);
 ```
 
+</details>
+
+<details>
+<summary>Flutter</summary>
+
+`flutter` names an SDK in the repository flake's `nixpkgs` input. It must match
+the package's `flutter` argument.
+
+</details>
+
 ## Custom sources
 
-For other upstreams, pass a function to `defineSource`. Use `fetchurl` to
-generate `source.nix` from a version and download URLs. Missing hashes are
-calculated automatically.
+Use `fetchurl` for other upstreams. It calculates missing hashes:
 
 ```ts
 import { defineSource, fetchurl } from "nix-repin";
@@ -281,17 +309,13 @@ export default defineSource(async () => {
 });
 ```
 
-The function can also return a map of relative file paths to text, `Uint8Array`
-contents, or `URL` objects to download.
+Custom functions can also return `{ "relative/path": content }`, where content
+is text, a `Uint8Array`, or a `URL` to download. Use `provider` to access the
+shared `Source`; returning `false` skips the entire update and discards its
+output.
 
-Use `provider` for a custom function that needs the shared `Source`. Return
-`false` from that function to skip the entire update and discard collected
-output. `await source.isCurrent("rev", rev)` checks a value in the existing
-generated `source.nix`.
-
-### Codeberg
-
-Resolve a ref once, then use that commit to read files and fetch an archive:
+<details>
+<summary>Codeberg</summary>
 
 ```ts
 import { codeberg } from "nix-repin";
@@ -304,15 +328,15 @@ const manifest = JSON.parse(
 const archive = await codeberg.prefetchArchive(repository, rev);
 ```
 
-`resolveRef` accepts a branch, tag or commit and returns `rev` and `date`.
-`readFile` returns UTF-8 text. `prefetchArchive` returns `url`, `hash` and
-`storePath`; it unpacks by default, producing a hash for `fetchzip`. Pass
-`{ unpack: false }` to hash the compressed tarball for `fetchurl`.
+`prefetchArchive` unpacks for `fetchzip`. Pass `{ unpack: false }` for
+`fetchurl`.
 
-### Render an archive with a known hash
+</details>
 
-Use `nix.renderArchive` when an upstream lock file already supplies the revision
-and unpacked hash. It generates Nix text without downloading the source:
+<details>
+<summary>Render an archive with a known hash</summary>
+
+Use a revision and unpacked hash from a lock file:
 
 ```ts
 import { github, nix } from "nix-repin";
@@ -326,38 +350,33 @@ const files = {
 };
 ```
 
-The renderer uses `fetchzip` with a `tar.gz` extension. Both
-`github.archiveUrl(repository, revision)` and
-`codeberg.archiveUrl(repository, revision)` build URLs without fetching them.
+`renderArchive` generates a `fetchzip` source without downloading it.
+`github.archiveUrl` and `codeberg.archiveUrl` construct archive URLs.
 
-### Reusable tools
+</details>
 
-Import these tools from `nix-repin` to fetch source data or generate custom
-files:
+<details>
+<summary>Reusable tools</summary>
 
-| Tool                                                    | Result                                                                                                         |
-| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `github.latestCommit({ repository, branch?, before? })` | Commit `rev` and `date` (`YYYY-MM-DD`); defaults to the repository's default branch.                           |
-| `github.prefetchArchive(repository, revision)`          | Unpacked archive `storePath`, `url`, and Nix `hash`.                                                           |
-| `npm.writeLock(directory, options?)`                    | Writes `package-lock.json` from the directory's `package.json`, without running scripts or installing modules. |
-| `npm.hash(lockPath)`                                    | Calculates `npmDepsHash` from an existing lock file.                                                           |
-| `nix.prefetch(url, { unpack?, name? })`                 | Download `hash` and `storePath`.                                                                               |
-| `nix.prefetchGit(url, revision)`                        | Nix hash for a Git checkout.                                                                                   |
-| `nix.prefetchGitSource(url, revision)`                  | Git checkout `rev`, `date`, `hash`, and `storePath`, without submodules.                                       |
-| `copyTree(from, to)`                                    | Copies a tree to a writable directory, preserving symlinks and permission bits and adding owner write access.  |
-| `runCommand(program, args, { cwd?, env? })`             | Trimmed stdout; throws with command output on failure.                                                         |
+| Tool                                                    | Result                                                                                  |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `github.latestCommit({ repository, branch?, before? })` | `rev`, `date`; follows the default branch unless `branch` is set.                       |
+| `github.prefetchArchive(repository, revision)`          | Unpacked `storePath`, `url`, `hash`.                                                    |
+| `npm.writeLock(directory, options?)`                    | Writes `package-lock.json` from `package.json`, without scripts or module installation. |
+| `npm.hash(lockPath)`                                    | `npmDepsHash`.                                                                          |
+| `nix.prefetch(url, { unpack?, name? })`                 | `hash`, `storePath`.                                                                    |
+| `nix.prefetchGit(url, revision)`                        | Git checkout hash.                                                                      |
+| `nix.prefetchGitSource(url, revision)`                  | `rev`, `date`, `hash`, `storePath`; excludes submodules.                                |
+| `copyTree(from, to)`                                    | Copies a tree, preserving symlinks and permissions and adding owner write access.       |
+| `runCommand(program, args, { cwd?, env? })`             | Trimmed stdout; throws with command output on failure.                                  |
 
-`before` is an ISO 8601 timestamp. For `npm.writeLock`, it limits both the
-package and dependency versions. The other options are `registry` and
-`legacyPeerDeps` (ignore peer dependencies).
+`npm.writeLock` accepts `registry`, `legacyPeerDeps`, and `before` (an ISO 8601
+cutoff for package and dependency versions). Create `package.json` first; the
+caller must clean up the directory, including `directory/cache`.
 
-Create `package.json` before calling `npm.writeLock`. Check or edit the
-generated lock file before passing it to `npm.hash`. The caller owns the
-directory and must clean up temporary files, including npm's cache at
-`directory/cache`.
+</details>
 
-See [nix.ts](src/nix.ts) for Nix rendering and nixpkgs build helpers, and
-[mod.ts](src/mod.ts) for all exports and types.
+See [mod.ts](src/mod.ts) for exports and [nix.ts](src/nix.ts) for Nix helpers.
 
 ## License
 
