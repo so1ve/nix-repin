@@ -1,9 +1,36 @@
 # nix-repin
 
-`nix-repin` updates Nix package sources from TypeScript definitions. Define each
-package in `pkgs/<name>/source.ts`. Generated files are written beside it.
+`nix-repin` updates Nix package sources from TypeScript definitions. Each package
+has a `source.ts` that describes where to get its source and which dependency
+hashes it needs. Generated files are written beside it for use in your Nix
+package definition.
 
 ## Usage
+
+Create `pkgs/program/source.ts` and export a provider. For example, to follow a
+GitHub repository's highest stable release:
+
+```ts
+import { github } from "nix-repin";
+
+export default github.release({
+  repository: "owner/repository",
+  stripPrefix: "v",
+});
+```
+
+Run the updater from your repository root:
+
+```sh
+nix-repin program
+```
+
+This writes `pkgs/program/source.nix` with `version`, `rev`, and `src`. Load it
+with `pkgs.callPackage ./pkgs/program/source.nix { }` and use its `version` and
+`src` in your package derivation. Set `GITHUB_TOKEN` or `GH_TOKEN` to authenticate
+GitHub requests.
+
+You can also update several packages at once or use a different package directory:
 
 ```sh
 # Update all packages with a pkgs/*/source.ts definition
@@ -16,9 +43,32 @@ nix-repin xwayland-satellite yanhekt-autoslides
 nix-repin --packages-root /path/to/repository/pkgs
 ```
 
-Set `GITHUB_TOKEN` or `GH_TOKEN` to authenticate GitHub requests.
+If the package also needs a dependency hash, add a lock provider with
+`defineSource`:
+
+```ts
+import { defineSource, github, npm } from "nix-repin";
+
+export default defineSource(
+  github.release({ repository: "owner/repository", stripPrefix: "v" }),
+  npm.lock("app/package-lock.json"),
+);
+```
+
+`defineSource` runs the providers in order and shares their source tree and
+generated output. Here, `github.release` fetches the source, then `npm.lock`
+reads `app/package-lock.json` from it and adds `npmDepsHash` to `source.nix`.
+
+When the GitHub source is unchanged, the update stops before running the lock
+provider. Set `refresh: true` on `github.release` to regenerate the output after
+changing the definition.
 
 ## Providers
+
+### Sources
+
+Choose a provider for the upstream you want to track. It can be exported directly
+from `source.ts`, as in the first example, or used first in `defineSource`.
 
 <details>
 <summary>GitHub</summary>
@@ -121,6 +171,9 @@ export default oci.image({
 });
 ```
 
+To keep container definitions in a separate directory, save this as
+`images/traefik/source.ts` and run:
+
 ```sh
 nix-repin --packages-root images
 ```
@@ -210,33 +263,29 @@ defaults to universal when `platforms` is omitted.
 
 </details>
 
-## Composing providers
+### Dependencies
 
-`defineSource` runs providers in order. Add a dependency hash after its source:
+Add these providers after `github.branch`, `github.tag`, `github.release` without
+`assets`, or `git.branch` in `defineSource`. Those source providers supply the
+tree needed to read lock files or build dependencies. Paths passed to `npm.lock`
+and `cargo.lock` are relative to that tree.
 
-```ts
-import { defineSource, github, npm } from "nix-repin";
-
-export default defineSource(
-  github.release({ repository: "owner/repository", stripPrefix: "v" }),
-  npm.lock("app/package-lock.json"),
-);
-```
-
-Lock providers require `github.branch`, `github.tag`, `github.release` without
-`assets`, or `git.branch` first. Paths are relative to that source.
-
-Unchanged GitHub archives and Git checkouts skip the remaining providers. Set
-`refresh: true` on a GitHub archive provider to force regeneration.
+An unchanged GitHub archive or Git checkout skips the remaining providers.
+GitHub archive providers accept `refresh: true` to force regeneration.
 
 | Provider                                  | Output                          |
 | ----------------------------------------- | ------------------------------- |
-| `npm.lock("package-lock.json")`           | `npmDepsHash`                   |
-| `bun.lock()`                              | `bunDepsHash`                   |
-| `go.lock()`                               | `vendorHash`                    |
-| `pnpm.lock()`                             | `pnpmDepsHash`                  |
+| `npm.lock("package-lock.json")`           | `npmDepsHash` in `source.nix`   |
+| `bun.lock()`                              | `bunDepsHash` in `source.nix`   |
+| `go.lock()`                               | `vendorHash` in `source.nix`    |
+| `pnpm.lock()`                             | `pnpmDepsHash` in `source.nix`  |
 | `cargo.lock("Cargo.lock")`                | `Cargo.lock`, `cargo-lock.nix`  |
 | `pubspec.lock({ flutter: "flutter347" })` | `pubspec.lock.json` for Flutter |
+
+Bun, Go, and PNPM calculate their hashes by building a dependency derivation from
+the package's `default.nix`, using the enclosing flake's `nixpkgs` input. Your
+`default.nix` must accept a `source` argument and use the generated hash as shown
+below.
 
 <details>
 <summary>Bun</summary>
@@ -250,8 +299,8 @@ export default defineSource(
 );
 ```
 
-`default.nix` must accept `source` and expose a fixed-output `node_modules`
-derivation with `outputHash = source.bunDepsHash`.
+Expose a fixed-output `node_modules` derivation from `default.nix` with
+`outputHash = source.bunDepsHash`.
 
 </details>
 
@@ -267,8 +316,7 @@ export default defineSource(
 );
 ```
 
-`default.nix` must accept `source` and set `vendorHash = source.vendorHash` in
-`buildGoModule`.
+Set `vendorHash = source.vendorHash` in `buildGoModule` in `default.nix`.
 
 </details>
 
@@ -285,13 +333,18 @@ export default defineSource(
 );
 ```
 
-`default.nix` must accept `source` and use `source.pnpmDepsHash` for the
-dependency hash. The attribute defaults to `pnpmDeps`.
+Use `source.pnpmDepsHash` for the dependency hash in `default.nix`. The argument
+to `pnpm.lock` selects a derivation attribute, here `frontend.pnpmDeps`; it
+defaults to `pnpmDeps`.
 
 </details>
 
 <details>
 <summary>Cargo</summary>
+
+`cargo.lock("Cargo.lock")` copies the upstream lock file and generates
+`cargo-lock.nix` with hashes for its Git dependencies. Use it in your Rust
+derivation:
 
 ```nix
 cargoDeps = rustPlatform.importCargoLock (import ./cargo-lock.nix);
@@ -302,19 +355,23 @@ cargoDeps = rustPlatform.importCargoLock (import ./cargo-lock.nix);
 <details>
 <summary>Flutter</summary>
 
-`flutter` names an SDK in the repository flake's `nixpkgs` input. It must match
-the package's `flutter` argument.
+`pubspec.lock` runs `flutter pub get` in a copy of the source tree and converts
+the resulting lock file to `pubspec.lock.json`. Its `flutter` option names an SDK
+in the repository flake's `nixpkgs` input and must match the package's `flutter`
+argument.
 
 </details>
 
 ## Custom sources
 
-Use `fetchurl` for other upstreams. It calculates missing hashes:
+When an upstream has no built-in provider, export an async function that returns
+the files to write. For downloadable releases, `fetchurl` generates `source.nix`
+from URLs and a version, calculating any missing hashes:
 
 ```ts
-import { defineSource, fetchurl } from "nix-repin";
+import { fetchurl } from "nix-repin";
 
-export default defineSource(async () => {
+export default async () => {
   const response = await fetch("https://example.com/latest.json");
   const release = await response.json() as {
     downloads: Record<string, string>;
@@ -325,13 +382,19 @@ export default defineSource(async () => {
     urls: release.downloads,
     version: release.version,
   });
-});
+};
 ```
 
-Custom functions can also return `{ "relative/path": content }`, where content
-is text, a `Uint8Array`, or a `URL` to download. Use `provider` to access the
-shared `Source`; returning `false` skips the entire update and discards its
-output.
+The return value is a map of `{ "relative/path": content }`. Paths are relative
+to the package directory; content can be text, a `Uint8Array`, or a `URL` to
+download. These functions can also be combined with other providers through
+`defineSource`.
+
+To read or modify the shared `Source`, wrap your function with `provider`.
+Returning `false` from that function skips the entire update and discards the
+output collected so far.
+
+The helpers below cover common tasks when writing a custom source.
 
 <details>
 <summary>Codeberg</summary>
