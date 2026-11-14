@@ -3,6 +3,7 @@ import { deepStrictEqual, rejects } from "node:assert/strict";
 import { defineSource, provider, type SourceDefinition } from "../source.ts";
 import * as bun from "./bun.ts";
 import * as go from "./go.ts";
+import * as pnpm from "./pnpm.ts";
 
 const derivation = "/nix/store/example-dependencies.drv";
 const hash = "sha256-Bta1tf1e34LoaOYhd/iN48LkCM7/jfTN4GHKHmi6758=";
@@ -56,6 +57,7 @@ for (
   const [name, lock, attribute] of [
     ["bun.lock", bun.lock(), "bunDepsHash"],
     ["go.lock", go.lock(), "vendorHash"],
+    ["pnpm.lock", pnpm.lock("frontend.pnpmDeps"), "pnpmDepsHash"],
   ] as const
 ) {
   Deno.test(`${name} writes the dependency derivation's actual hash`, async () => {

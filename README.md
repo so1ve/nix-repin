@@ -234,6 +234,7 @@ Unchanged GitHub archives and Git checkouts skip the remaining providers. Set
 | `npm.lock("package-lock.json")`           | `npmDepsHash`                   |
 | `bun.lock()`                              | `bunDepsHash`                   |
 | `go.lock()`                               | `vendorHash`                    |
+| `pnpm.lock()`                             | `pnpmDepsHash`                  |
 | `cargo.lock("Cargo.lock")`                | `Cargo.lock`, `cargo-lock.nix`  |
 | `pubspec.lock({ flutter: "flutter347" })` | `pubspec.lock.json` for Flutter |
 
@@ -268,6 +269,24 @@ export default defineSource(
 
 `default.nix` must accept `source` and set `vendorHash = source.vendorHash` in
 `buildGoModule`.
+
+</details>
+
+<details>
+<summary>PNPM</summary>
+
+```ts
+import { defineSource, github, go, pnpm } from "nix-repin";
+
+export default defineSource(
+  github.release({ repository: "pocket-id/pocket-id", stripPrefix: "v" }),
+  pnpm.lock("frontend.pnpmDeps"),
+  go.lock(),
+);
+```
+
+`default.nix` must accept `source` and use `source.pnpmDepsHash` for the
+dependency hash. The attribute defaults to `pnpmDeps`.
 
 </details>
 

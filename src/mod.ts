@@ -10,6 +10,7 @@ export * as nix from "./nix.ts";
 export * as npm from "./providers/npm.ts";
 export * as oci from "./providers/oci.ts";
 export * as openvsx from "./providers/openvsx.ts";
+export * as pnpm from "./providers/pnpm.ts";
 export * as pubspec from "./providers/pubspec.ts";
 export { fetchurl } from "./providers/fetchurl.ts";
 export { type CommandOptions, runCommand } from "./command.ts";
