@@ -215,6 +215,7 @@ relative to the source root.
 | ----------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `npm.lock("package-lock.json")`           | Adds `npmDepsHash` to `source.nix`.                                                         |
 | `bun.lock()`                              | Adds `bunDepsHash` by hashing the package's `node_modules` derivation.                      |
+| `go.lock()`                               | Adds `vendorHash` by hashing the package's `goModules` derivation.                          |
 | `cargo.lock("Cargo.lock")`                | Copies the lock file and writes `cargo-lock.nix` with `outputHashes` for Git dependencies.  |
 | `pubspec.lock({ flutter: "flutter347" })` | Resolves Flutter dependencies and writes `pubspec.lock.json` for `buildFlutterApplication`. |
 
@@ -234,6 +235,20 @@ import { bun, defineSource, github } from "nix-repin";
 export default defineSource(
   github.branch({ repository: "owner/repository", refresh: true }),
   bun.lock(),
+);
+```
+
+For Go, the package's `default.nix` must accept `source` and use
+`source.vendorHash` in `buildGoModule`. The provider builds only `goModules`,
+using the repository's locked nixpkgs and the package's dependency-fetching
+configuration:
+
+```ts
+import { defineSource, github, go } from "nix-repin";
+
+export default defineSource(
+  github.tag({ repository: "owner/repository", stripPrefix: "v" }),
+  go.lock(),
 );
 ```
 

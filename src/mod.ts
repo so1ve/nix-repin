@@ -4,6 +4,7 @@ export * as cargo from "./providers/cargo.ts";
 export * as codeberg from "./providers/codeberg.ts";
 export * as git from "./providers/git.ts";
 export * as github from "./providers/github.ts";
+export * as go from "./providers/go.ts";
 export * as marketplace from "./providers/marketplace.ts";
 export * as nix from "./nix.ts";
 export * as npm from "./providers/npm.ts";

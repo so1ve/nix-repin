@@ -1,13 +1,16 @@
 import { deepStrictEqual, rejects } from "node:assert/strict";
 
-import { defineSource, provider } from "../source.ts";
-import { lock } from "./bun.ts";
+import { defineSource, provider, type SourceDefinition } from "../source.ts";
+import * as bun from "./bun.ts";
+import * as go from "./go.ts";
 
-const derivation = "/nix/store/example-node_modules.drv";
+const derivation = "/nix/store/example-dependencies.drv";
 const hash = "sha256-Bta1tf1e34LoaOYhd/iN48LkCM7/jfTN4GHKHmi6758=";
 
-async function generate(stderr: string) {
-  const directory = await Deno.makeTempDir({ prefix: "nix-repin-bun-test-" });
+async function generate(lock: SourceDefinition, stderr: string) {
+  const directory = await Deno.makeTempDir({
+    prefix: "nix-repin-dependency-test-",
+  });
   const originalOutput = Deno.Command.prototype.output;
   const encoder = new TextEncoder();
   const responses = [
@@ -40,7 +43,7 @@ async function generate(stderr: string) {
           (attributes) => JSON.stringify(attributes),
         );
       }),
-      lock(),
+      lock,
     );
     return await definition({ packageDirectory: directory });
   } finally {
@@ -49,24 +52,33 @@ async function generate(stderr: string) {
   }
 }
 
-Deno.test("bun.lock writes the dependency derivation's actual hash", async () => {
-  const files = await generate(
-    `error: hash mismatch in fixed-output derivation '${derivation}':
+for (
+  const [name, lock, attribute] of [
+    ["bun.lock", bun.lock(), "bunDepsHash"],
+    ["go.lock", go.lock(), "vendorHash"],
+  ] as const
+) {
+  Deno.test(`${name} writes the dependency derivation's actual hash`, async () => {
+    const files = await generate(
+      lock,
+      `error: hash mismatch in fixed-output derivation '${derivation}':
        specified: sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
             got: ${hash}`,
-  );
-  deepStrictEqual(JSON.parse(files["source.nix"] as string), {
-    version: "1.0.0",
-    bunDepsHash: hash,
+    );
+    deepStrictEqual(JSON.parse(files["source.nix"] as string), {
+      version: "1.0.0",
+      [attribute]: hash,
+    });
   });
-});
 
-Deno.test("bun.lock propagates failures from other dependencies", async () => {
-  await rejects(
-    generate(
-      `error: hash mismatch in fixed-output derivation '/nix/store/other-source.drv':\n got: ${hash}`,
-    ),
-    /other-source\.drv/,
-  );
-  await rejects(generate("error: download failed"), /download failed/);
-});
+  Deno.test(`${name} propagates failures from other dependencies`, async () => {
+    await rejects(
+      generate(
+        lock,
+        `error: hash mismatch in fixed-output derivation '/nix/store/other-source.drv':\n got: ${hash}`,
+      ),
+      /other-source\.drv/,
+    );
+    await rejects(generate(lock, "error: download failed"), /download failed/);
+  });
+}
