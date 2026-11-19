@@ -2,8 +2,9 @@
   "compilerOptions": {
     "target": "ESNext",
     "lib": ["ESNext"],
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
     "typeRoots": ["./node_modules/@types"],
     "types": ["node"],
     "allowImportingTsExtensions": true,

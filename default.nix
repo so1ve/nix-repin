@@ -41,6 +41,7 @@ buildNpmPackage {
 
     mkdir -p "$out/bin" "$out/share/nix-repin/node_modules/@types"
     cp -r node_modules/@types/node "$out/share/nix-repin/node_modules/@types/"
+    cp -r node_modules/undici-types "$out/share/nix-repin/node_modules/"
 
     npm prune --omit=dev
 
