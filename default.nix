@@ -33,18 +33,15 @@ buildNpmPackage {
   inherit src;
 
   nodejs = nodejs_26;
-  npmDepsHash = "sha256-1OF4YIGWJtVgrWMKmWDclJcDWlzowwYUrJ6rWCBghMo=";
+  npmDepsHash = "sha256-+DG3dg4v0UhIyQoU5AjdUOsJotnJ8PptX5VP0W+LI8Y=";
   nativeBuildInputs = [ makeWrapper ];
 
   installPhase = ''
     runHook preInstall
 
-    mkdir -p "$out/bin" "$out/share/nix-repin/node_modules/@types"
-    cp -r node_modules/@types/node "$out/share/nix-repin/node_modules/@types/"
-    cp -r node_modules/undici-types "$out/share/nix-repin/node_modules/"
-
     npm prune --omit=dev
 
+    mkdir -p "$out/bin" "$out/share/nix-repin"
     cp -r package.json tsconfig.consumer.json src types node_modules "$out/share/nix-repin"
     rm -rf "$out/share/nix-repin/src"/*.test.ts \
       "$out/share/nix-repin/src/providers"/*.test.ts \

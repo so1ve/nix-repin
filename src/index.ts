@@ -19,3 +19,4 @@ export * as pubspec from "./providers/pubspec.ts";
 export * as yarn from "./providers/yarn.ts";
 export type { FileSource, SourceDefinition, SourceFiles } from "./source.ts";
 export { Source, defineSource } from "./source.ts";
+export * as semver from "semver";
