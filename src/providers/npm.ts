@@ -1,4 +1,6 @@
-import * as path from "@std/path";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
 
 import { runCommand } from "../command.ts";
 import { readTextFileIfExists } from "../files.ts";
@@ -7,58 +9,78 @@ import type { SourceDefinition, SourceFiles } from "../source.ts";
 import { fetchurl } from "./fetchurl.ts";
 
 export interface PackageOptions {
-  /** npm distribution tag to track. */
+  /**
+   * Npm distribution tag to track.
+   */
   distTag?: string;
-  /** Published npm package name. */
+  /**
+   * Published npm package name.
+   */
   name: string;
-  /** npm registry base URL without a trailing slash. */
+  /**
+   * Npm registry base URL without a trailing slash.
+   */
   registry?: string;
 }
 
 export interface LockOptions {
-  /** Only resolve versions published on or before this ISO 8601 timestamp. */
+  /**
+   * Only resolve versions published on or before this ISO 8601 timestamp.
+   */
   before?: string;
-  /** Ignore peer dependencies while resolving the lock file. */
+  /**
+   * Ignore peer dependencies while resolving the lock file.
+   */
   legacyPeerDeps?: boolean;
-  /** npm registry base URL without a trailing slash. */
+  /**
+   * Npm registry base URL without a trailing slash.
+   */
   registry?: string;
 }
 
 const defaultRegistry = "https://registry.npmjs.org";
 
-/** Calculate npmDepsHash from an existing package-lock.json. */
-export function hash(path: string): Promise<string> {
-  return runCommand("prefetch-npm-deps", [path]);
-}
+/**
+ * Calculate npmDepsHash from an existing package-lock.json.
+ */
+export const hash = (path: string): Promise<string> =>
+  runCommand("prefetch-npm-deps", [path]);
 
-/** Write package-lock.json for a directory's package.json without running scripts. */
+/**
+ * Write package-lock.json for a directory's package.json without running
+ * scripts.
+ */
 export async function writeLock(
   directory: string,
   options: LockOptions = {},
 ): Promise<void> {
-  await runCommand("npm", [
-    "install",
-    "--package-lock-only",
-    "--ignore-scripts",
-    "--no-audit",
-    "--no-fund",
-    `--registry=${options.registry ?? defaultRegistry}`,
-    ...(options.before ? [`--before=${options.before}`] : []),
-    ...(options.legacyPeerDeps ? ["--legacy-peer-deps"] : []),
-  ], {
-    cwd: directory,
-    env: { NPM_CONFIG_CACHE: path.resolve(directory, "cache") },
-  });
+  await runCommand(
+    "npm",
+    [
+      "install",
+      "--package-lock-only",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+      `--registry=${options.registry ?? defaultRegistry}`,
+      ...(options.before ? [`--before=${options.before}`] : []),
+      ...(options.legacyPeerDeps ? ["--legacy-peer-deps"] : []),
+    ],
+    {
+      cwd: directory,
+      env: { NPM_CONFIG_CACHE: path.resolve(directory, "cache") },
+    },
+  );
 }
 
-/** Generate npmDepsHash from a package-lock.json in an archive source. */
-export function lock(
-  { path = "package-lock.json" }: { path?: string } = {},
-): SourceDefinition {
-  return async (source) => {
+/**
+ * Generate npmDepsHash from a package-lock.json in an archive source.
+ */
+export const lock =
+  ({ path = "package-lock.json" }: { path?: string } = {}): SourceDefinition =>
+  async (source) => {
     source.addNixAttribute("npmDepsHash", await hash(source.sourceFile(path)));
   };
-}
 
 function packageJson(name: string, version: string): string {
   const manifest = {
@@ -67,18 +89,20 @@ function packageJson(name: string, version: string): string {
     version,
     dependencies: { [name]: version },
   };
+
   return `${JSON.stringify(manifest, null, 2)}\n`;
 }
 
-function sourceNix(version: string, npmDepsHash: string): string {
-  return `${nix.HEADER}{ }:
+const sourceNix = (
+  version: string,
+  npmDepsHash: string,
+): string => `${nix.HEADER}{ }:
 
 {
   version = ${nix.string(version)};
   npmDepsHash = ${nix.string(npmDepsHash)};
 }
 `;
-}
 
 async function currentVersion(
   packageDirectory: string,
@@ -87,7 +111,9 @@ async function currentVersion(
   const contents = await readTextFileIfExists(
     `${packageDirectory}/package.json`,
   );
-  if (contents === undefined) return undefined;
+  if (contents === undefined) {
+    return undefined;
+  }
   const manifest = JSON.parse(contents) as {
     dependencies: Record<string, string>;
   };
@@ -100,15 +126,18 @@ async function packageMetadata(
   distTag: string,
   registry: string,
 ): Promise<{ version: string; dist: { tarball: string } }> {
-  const url = `${registry}/${encodeURIComponent(name)}/${
-    encodeURIComponent(distTag)
-  }`;
+  const url = `${registry}/${encodeURIComponent(name)}/${encodeURIComponent(
+    distTag,
+  )}`;
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`${name}: ${url} returned ${response.status}`);
   }
 
-  return response.json();
+  return response.json() as Promise<{
+    version: string;
+    dist: { tarball: string };
+  }>;
 }
 
 async function lockedPackage(
@@ -116,25 +145,28 @@ async function lockedPackage(
   registry: string,
   manifest: string,
 ): Promise<SourceFiles> {
-  const directory = await Deno.makeTempDir({ prefix: "nix-repin-npm-" });
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "nix-repin-npm-"));
   const lockPath = `${directory}/package-lock.json`;
   try {
-    await Deno.writeTextFile(`${directory}/package.json`, manifest);
+    await fs.writeFile(`${directory}/package.json`, manifest);
     await writeLock(directory, { registry });
 
-    const lock = await Deno.readTextFile(lockPath);
+    const lock = await fs.readFile(lockPath, "utf8");
     const npmDepsHash = await hash(lockPath);
+
     return {
       "package.json": manifest,
       "package-lock.json": lock,
       "source.nix": sourceNix(version, npmDepsHash),
     };
   } finally {
-    await Deno.remove(directory, { recursive: true });
+    await fs.rm(directory, { recursive: true, force: true });
   }
 }
 
-/** Track an npm dist-tag and generate a lock file plus its fixed-output hash. */
+/**
+ * Track an npm dist-tag and generate a lock file plus its fixed-output hash.
+ */
 export function pkg(options: PackageOptions): SourceDefinition {
   const registry = options.registry ?? defaultRegistry;
 
@@ -145,21 +177,28 @@ export function pkg(options: PackageOptions): SourceDefinition {
       registry,
     );
     if (
-      await source.shouldSkip(async () =>
-        await currentVersion(source.packageDirectory, options.name) === version
+      await source.shouldSkip(
+        async () =>
+          (await currentVersion(source.packageDirectory, options.name)) ===
+          version,
       )
     ) {
       return false;
     }
 
     const manifest = packageJson(options.name, version);
+
     return lockedPackage(version, registry, manifest);
   };
 }
 
-/** Track an npm dist-tag and generate a fetchurl source for its published tarball. */
-export function tarball(options: PackageOptions): SourceDefinition {
-  return async (source) => {
+/**
+ * Track an npm dist-tag and generate a fetchurl source for its published
+ * tarball.
+ */
+export const tarball =
+  (options: PackageOptions): SourceDefinition =>
+  async (source) => {
     const { version, dist } = await packageMetadata(
       options.name,
       options.distTag ?? "latest",
@@ -171,4 +210,3 @@ export function tarball(options: PackageOptions): SourceDefinition {
 
     return fetchurl({ version, urls: { default: dist.tarball } });
   };
-}

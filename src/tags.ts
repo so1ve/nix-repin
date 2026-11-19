@@ -1,4 +1,4 @@
-import { compare, tryParse } from "@std/semver";
+import { compare, parse } from "semver";
 
 import { runCommand } from "./command.ts";
 import * as nix from "./nix.ts";
@@ -19,20 +19,20 @@ export async function selectTag(tags: string[], options: TagOptions) {
   const prefix = options.stripPrefix ?? "";
   const versions = matching.map((tag) => ({
     tag,
-    version: tryParse(tag.startsWith(prefix) ? tag.slice(prefix.length) : tag),
+    version: parse(tag.startsWith(prefix) ? tag.slice(prefix.length) : tag),
   }));
-  const tag: string = versions.every(({ version }) => version !== undefined)
+  const tag: string = versions.every(({ version }) => version !== null)
     ? versions.sort((a, b) => compare(b.version!, a.version!))[0].tag
     : JSON.parse(
-      await runCommand("nix", [
-        "eval",
-        "--json",
-        "--expr",
-        `builtins.head (builtins.sort (a: b: builtins.compareVersions a b > 0) [
+        await runCommand("nix", [
+          "eval",
+          "--json",
+          "--expr",
+          `builtins.head (builtins.sort (a: b: builtins.compareVersions a b > 0) [
       ${matching.map(nix.string).join("\n")}
     ])`,
-      ]),
-    );
+        ]),
+      );
   if (!tag.startsWith(prefix)) {
     throw new Error(
       `${options.repository}: tag ${tag} does not start with ${prefix}`,

@@ -4,13 +4,18 @@ import type { SourceDefinition } from "../source.ts";
 
 export interface BranchOptions {
   url: string;
-  /** Branch name to track; defaults to the remote's HEAD. */
+  /**
+   * Branch name to track; defaults to the remote's HEAD.
+   */
   branch?: string;
 }
 
-/** Track a Git branch and generate a fetchgit source without submodules. */
-export function branch(options: BranchOptions): SourceDefinition {
-  return async (source) => {
+/**
+ * Track a Git branch and generate a fetchgit source without submodules.
+ */
+export const branch =
+  (options: BranchOptions): SourceDefinition =>
+  async (source) => {
     const ref = options.branch ? `refs/heads/${options.branch}` : "HEAD";
     const output = await runCommand("git", [
       "ls-remote",
@@ -18,7 +23,8 @@ export function branch(options: BranchOptions): SourceDefinition {
       options.url,
       ref,
     ]);
-    const rev = output.split("\n")
+    const rev = output
+      .split("\n")
       .map((line) => line.split("\t"))
       .find(([, name]) => name === ref)?.[0];
     if (!rev) {
@@ -45,4 +51,3 @@ export function branch(options: BranchOptions): SourceDefinition {
         ),
     );
   };
-}

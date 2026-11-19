@@ -413,7 +413,7 @@ import { fetchurl } from "nix-repin";
 
 export default async () => {
   const response = await fetch("https://example.com/latest.json");
-  const release = await response.json() as {
+  const release = (await response.json()) as {
     downloads: Record<string, string>;
     version: string;
   };
@@ -515,6 +515,23 @@ cutoff for package and dependency versions). Create `package.json` first; the
 caller must clean up the directory, including `directory/cache`.
 
 </details>
+
+## TypeScript types
+
+The Nix package includes generated type declarations at
+`$out/share/nix-repin`. To enable editor completion and type checking
+for `import { ... } from "nix-repin"` in your repository without running npm,
+link the package into `node_modules` from your devShell (and add `node_modules`
+to `.gitignore`):
+
+```nix
+shellHook = ''
+  mkdir -p node_modules
+  ln -sfn ${nix-repin}/share/nix-repin node_modules/nix-repin
+'';
+```
+
+Alternatively, install `nix-repin` as a devDependency in `package.json`.
 
 See [mod.ts](src/mod.ts) for exports and [nix.ts](src/nix.ts) for Nix helpers.
 

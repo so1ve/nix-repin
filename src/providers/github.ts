@@ -7,7 +7,7 @@ import { template } from "../template.ts";
 import { fetchurl } from "./fetchurl.ts";
 
 const octokit = new Octokit({
-  auth: Deno.env.get("GITHUB_TOKEN") ?? Deno.env.get("GH_TOKEN"),
+  auth: process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN,
   userAgent: "nix-repin",
 });
 
@@ -18,16 +18,22 @@ interface CommonOptions {
 
 export interface CommitOptions {
   repository: string;
-  /** Branch to track; defaults to the repository's default branch. */
+  /**
+   * Branch to track; defaults to the repository's default branch.
+   */
   branch?: string;
-  /** Only consider commits before this ISO 8601 timestamp. */
+  /**
+   * Only consider commits before this ISO 8601 timestamp.
+   */
   before?: string;
 }
 
 type BranchOptions = CommonOptions & CommitOptions;
 
 interface TagOptions extends CommonOptions {
-  /** Regular expression matched against the whole tag. */
+  /**
+   * Regular expression matched against the whole tag.
+   */
   tagPattern?: string;
   stripPrefix?: string;
 }
@@ -46,59 +52,60 @@ function parseRepository(value: string): [owner: string, repository: string] {
   return [owner, name];
 }
 
-function rawFile(
+const rawFile = (
   owner: string,
   repository: string,
   revision: string,
   path: string,
-): URL {
-  return new URL(
-    `https://raw.githubusercontent.com/${
-      [owner, repository, revision, ...path.split("/")]
-        .map(encodeURIComponent)
-        .join("/")
-    }`,
+): URL =>
+  new URL(
+    `https://raw.githubusercontent.com/${[
+      owner,
+      repository,
+      revision,
+      ...path.split("/"),
+    ]
+      .map(encodeURIComponent)
+      .join("/")}`,
   );
-}
 
-function rawFiles(
+const rawFiles = (
   owner: string,
   repository: string,
   revision: string,
   files: string[],
-): SourceFiles {
-  return Object.fromEntries(
-    files.map((path) => [
-      path,
-      rawFile(owner, repository, revision, path),
-    ]),
+): SourceFiles =>
+  Object.fromEntries(
+    files.map((path) => [path, rawFile(owner, repository, revision, path)]),
   );
-}
 
-function additionalFiles(
+const additionalFiles = (
   owner: string,
   repository: string,
   revision: string,
   options: CommonOptions,
-): SourceFiles {
-  return options.files
-    ? rawFiles(owner, repository, revision, options.files)
-    : {};
-}
+): SourceFiles =>
+  options.files ? rawFiles(owner, repository, revision, options.files) : {};
 
 export interface ArchiveSource extends nix.PrefetchResult {
   url: string;
 }
 
-/** Build the tar.gz URL for a GitHub revision without fetching it. */
+/**
+ * Build the tar.gz URL for a GitHub revision without fetching it.
+ */
 export function archiveUrl(repository: string, revision: string): string {
   const [owner, name] = parseRepository(repository);
-  return `https://codeload.github.com/${encodeURIComponent(owner)}/${
-    encodeURIComponent(name)
-  }/tar.gz/${encodeURIComponent(revision)}`;
+
+  return `https://codeload.github.com/${encodeURIComponent(owner)}/${encodeURIComponent(
+    name,
+  )}/tar.gz/${encodeURIComponent(revision)}`;
 }
 
-/** Download and unpack a GitHub revision, returning its URL, hash and store path. */
+/**
+ * Download and unpack a GitHub revision, returning its URL, hash and store
+ * path.
+ */
 export async function prefetchArchive(
   repository: string,
   revision: string,
@@ -109,7 +116,9 @@ export async function prefetchArchive(
   return { hash, storePath, url };
 }
 
-/** Resolve a branch's newest commit, optionally bounded by a publication cutoff. */
+/**
+ * Resolve a branch's newest commit, optionally bounded by a publication cutoff.
+ */
 export async function latestCommit(
   options: CommitOptions,
 ): Promise<{ rev: string; date: string }> {
@@ -138,25 +147,24 @@ async function archive(
   options: CommonOptions,
   attributes: Record<string, string> & { rev: string },
 ): Promise<false | void> {
-  if (
-    await source.shouldSkip(() => source.matches({ rev: attributes.rev }))
-  ) {
+  if (await source.shouldSkip(() => source.matches({ rev: attributes.rev }))) {
     return false;
   }
 
   const fetched = await prefetchArchive(options.repository, attributes.rev);
-  source.setNixSource(
-    fetched.storePath,
-    attributes,
-    (attributes) => nix.renderArchive(fetched, attributes),
+  source.setNixSource(fetched.storePath, attributes, (attributes) =>
+    nix.renderArchive(fetched, attributes),
   );
   const [owner, repository] = parseRepository(options.repository);
   source.addFiles(additionalFiles(owner, repository, attributes.rev, options));
 }
 
-/** Track the highest matching tag, including repositories without releases. */
-export function tag(options: TagOptions): SourceDefinition {
-  return async (source) => {
+/**
+ * Track the highest matching tag, including repositories without releases.
+ */
+export const tag =
+  (options: TagOptions): SourceDefinition =>
+  async (source) => {
     const [owner, repo] = parseRepository(options.repository);
     const tags = await octokit.paginate(octokit.rest.repos.listTags, {
       owner,
@@ -167,19 +175,24 @@ export function tag(options: TagOptions): SourceDefinition {
       tags.map((tag) => tag.name),
       options,
     );
+
     return archive(source, options, { version, rev: tag });
   };
-}
 
-export function release(options: ReleaseOptions): SourceDefinition {
-  return async (source) => {
+export const release =
+  (options: ReleaseOptions): SourceDefinition =>
+  async (source) => {
     const [owner, repository] = parseRepository(options.repository);
-    const releases = (await octokit.paginate(octokit.rest.repos.listReleases, {
-      owner,
-      repo: repository,
-      per_page: 100,
-    })).filter((release) =>
-      !release.draft && (options.includePrerelease || !release.prerelease)
+    const releases = (
+      await octokit.paginate(octokit.rest.repos.listReleases, {
+        owner,
+        repo: repository,
+        per_page: 100,
+      })
+    ).filter(
+      (release) =>
+        !release.draft &&
+        (Boolean(options.includePrerelease) || !release.prerelease),
     );
     const { tag, version } = await selectTag(
       releases.map((release) => release.tag_name),
@@ -191,7 +204,7 @@ export function release(options: ReleaseOptions): SourceDefinition {
         Object.entries(options.assets).map(([system, source]) => {
           const assetTemplate = template(source);
           const asset = release.assets.find((asset) =>
-            assetTemplate.matches(asset.name, { version, tag, system })
+            assetTemplate.matches(asset.name, { version, tag, system }),
           );
           if (!asset) {
             throw new Error(
@@ -199,10 +212,10 @@ export function release(options: ReleaseOptions): SourceDefinition {
             );
           }
           const hash = asset.digest
-            ? `sha256-${
-              Uint8Array.fromHex(asset.digest.slice("sha256:".length))
-                .toBase64()
-            }`
+            ? `sha256-${Buffer.from(
+                asset.digest.slice("sha256:".length),
+                "hex",
+              ).toString("base64")}`
             : undefined;
 
           return [system, { hash, url: asset.browser_download_url }];
@@ -215,11 +228,11 @@ export function release(options: ReleaseOptions): SourceDefinition {
 
     source.addFiles(additionalFiles(owner, repository, tag, options));
   };
-}
 
-export function branch(options: BranchOptions): SourceDefinition {
-  return async (source) => {
+export const branch =
+  (options: BranchOptions): SourceDefinition =>
+  async (source) => {
     const { rev, date } = await latestCommit(options);
+
     return archive(source, options, { date, rev });
   };
-}

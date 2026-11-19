@@ -1,8 +1,9 @@
-import { deepStrictEqual, rejects } from "node:assert";
+import { deepStrictEqual, rejects } from "node:assert/strict";
+import { test } from "node:test";
 
 import { archiveUrl, readFile, resolveRef } from "./codeberg.ts";
 
-Deno.test("Codeberg resolves a tag with a slash and reads files at its commit", async () => {
+test("Codeberg resolves a tag with a slash and reads files at its commit", async () => {
   const repository = "Koromix/rygel";
   const rev = "8d3eff506ae321a80c22ad61536fa14efd23b291";
   const manifest = '{"version":"2.14.1"}\n';
@@ -14,16 +15,20 @@ Deno.test("Codeberg resolves a tag with a slash and reads files at its commit", 
         url.pathname,
         "/api/v1/repos/Koromix/rygel/git/commits/koffi%2F2.14.1",
       );
-      return Promise.resolve(Response.json({
-        sha: rev,
-        commit: { committer: { date: "2025-09-23T12:30:00Z" } },
-      }));
+
+      return Promise.resolve(
+        Response.json({
+          sha: rev,
+          commit: { committer: { date: "2025-09-23T12:30:00Z" } },
+        }),
+      );
     }
     deepStrictEqual(
       url.pathname,
       "/api/v1/repos/Koromix/rygel/raw/src/koffi/package.json",
     );
     deepStrictEqual(url.searchParams.get("ref"), rev);
+
     return Promise.resolve(new Response(manifest));
   };
 
@@ -43,7 +48,7 @@ Deno.test("Codeberg resolves a tag with a slash and reads files at its commit", 
   }
 });
 
-Deno.test("Codeberg reports missing refs and files", async () => {
+test("Codeberg reports missing refs and files", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = () => Promise.resolve(new Response(null, { status: 404 }));
   try {

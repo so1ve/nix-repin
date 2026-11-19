@@ -9,16 +9,11 @@
   };
 
   inputs = {
-    deno2nix = {
-      url = "github:aMOPel/deno2nix/custom-made-fetcher";
-      flake = false;
-    };
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
   outputs =
     {
-      deno2nix,
       nixpkgs,
       self,
     }:
@@ -39,9 +34,7 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in
         {
-          default = pkgs.callPackage ./default.nix {
-            inherit ((import deno2nix { inherit pkgs; }).lib) buildDenoPackage;
-          };
+          default = pkgs.callPackage ./default.nix { };
         }
       );
 

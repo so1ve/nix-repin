@@ -1,54 +1,68 @@
-import { equals } from "@std/bytes/equals";
-import * as path from "@std/path";
+import { randomBytes } from "node:crypto";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 
+import { isNotFound } from "./files.ts";
 import type { FileSource } from "./source.ts";
 
 const bufferSize = 64 * 1024;
+
+async function readExact(
+  handle: fs.FileHandle,
+  buffer: Buffer,
+  length: number,
+): Promise<number> {
+  let offset = 0;
+  while (offset < length) {
+    const { bytesRead } = await handle.read(buffer, offset, length - offset);
+    if (bytesRead === 0) {
+      break;
+    }
+    offset += bytesRead;
+  }
+
+  return offset;
+}
 
 async function filesEqual(
   leftPath: string,
   rightPath: string,
 ): Promise<boolean> {
-  let leftFile: Deno.FsFile;
+  let leftFile: fs.FileHandle;
   try {
-    leftFile = await Deno.open(leftPath);
+    leftFile = await fs.open(leftPath);
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
+    if (isNotFound(error)) {
       return false;
     }
 
     throw error;
   }
 
-  using left = leftFile;
-  using right = await Deno.open(rightPath);
-  const [leftStat, rightStat] = await Promise.all([
-    left.stat(),
-    right.stat(),
-  ]);
+  await using left = leftFile;
+  await using right = await fs.open(rightPath);
+  const [leftStat, rightStat] = await Promise.all([left.stat(), right.stat()]);
   if (leftStat.size !== rightStat.size) {
     return false;
   }
 
-  const leftReader = left.readable.getReader({ mode: "byob" });
-  const rightReader = right.readable.getReader({ mode: "byob" });
-  let leftBuffer = new Uint8Array(bufferSize);
-  let rightBuffer = new Uint8Array(bufferSize);
+  const leftBuffer = Buffer.allocUnsafe(bufferSize);
+  const rightBuffer = Buffer.allocUnsafe(bufferSize);
   let remaining = leftStat.size;
   while (remaining > 0) {
     const length = Math.min(bufferSize, remaining);
-    const [leftResult, rightResult] = await Promise.all([
-      leftReader.read(leftBuffer, { min: length }),
-      rightReader.read(rightBuffer, { min: length }),
+    const [leftRead, rightRead] = await Promise.all([
+      readExact(left, leftBuffer, length),
+      readExact(right, rightBuffer, length),
     ]);
-    const leftChunk = leftResult.value!;
-    const rightChunk = rightResult.value!;
-    if (leftChunk.length !== length || !equals(leftChunk, rightChunk)) {
+    if (
+      leftRead !== length ||
+      rightRead !== length ||
+      !leftBuffer.subarray(0, length).equals(rightBuffer.subarray(0, length))
+    ) {
       return false;
     }
 
-    leftBuffer = new Uint8Array(leftChunk.buffer);
-    rightBuffer = new Uint8Array(rightChunk.buffer);
     remaining -= length;
   }
 
@@ -60,37 +74,37 @@ export async function writeFile(
   source: FileSource,
 ): Promise<boolean> {
   const directory = path.dirname(file);
-  await Deno.mkdir(directory, { recursive: true });
-  const temporary = await Deno.makeTempFile({
-    dir: directory,
-    prefix: ".nix-repin-",
-  });
+  await fs.mkdir(directory, { recursive: true });
+  const temporary = path.join(
+    directory,
+    `.nix-repin-${randomBytes(8).toString("hex")}`,
+  );
   let renamed = false;
   try {
     if (source instanceof URL) {
       const response = await fetch(source);
       if (!response.ok) {
-        throw new Error(`failed to download ${source}: ${response.status}`);
+        throw new Error(
+          `failed to download ${source.href}: ${response.status}`,
+        );
       }
-      await Deno.writeFile(temporary, response.body!);
-    } else if (typeof source === "string") {
-      await Deno.writeTextFile(temporary, source);
+      await fs.writeFile(temporary, response.body as AsyncIterable<Uint8Array>);
     } else {
-      await Deno.writeFile(temporary, source);
+      await fs.writeFile(temporary, source);
     }
 
     if (await filesEqual(file, temporary)) {
       return false;
     }
 
-    await Deno.chmod(temporary, 0o644);
-    await Deno.rename(temporary, file);
+    await fs.chmod(temporary, 0o644);
+    await fs.rename(temporary, file);
     renamed = true;
 
     return true;
   } finally {
     if (!renamed) {
-      await Deno.remove(temporary);
+      await fs.rm(temporary, { force: true });
     }
   }
 }

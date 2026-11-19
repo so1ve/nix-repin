@@ -1,3 +1,5 @@
 /.devenv
+/node_modules
 /result
 /result-*
+/types

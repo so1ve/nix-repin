@@ -1,10 +1,14 @@
 const specialCharacters = /[.*+?^${}()|[\]\\]/g;
 
 export interface Template {
-  /** Substitute `{name}` placeholders literally. */
-  render(values: Record<string, string>): string;
-  /** Test `name` against the template as an anchored regular expression. */
-  matches(name: string, values: Record<string, string>): boolean;
+  /**
+   * Substitute `{name}` placeholders literally.
+   */
+  render: (values: Record<string, string>) => string;
+  /**
+   * Test `name` against the template as an anchored regular expression.
+   */
+  matches: (name: string, values: Record<string, string>) => boolean;
 }
 
 export function template(source: string): Template {

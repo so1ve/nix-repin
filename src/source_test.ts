@@ -1,16 +1,18 @@
 import { deepStrictEqual, rejects } from "node:assert/strict";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
+import { test } from "node:test";
 
 import * as nix from "./nix.ts";
-import { defineSource, Source } from "./source.ts";
+import { Source, defineSource } from "./source.ts";
 import { generateSource } from "./test_support.ts";
 
-Deno.test("defineSource shares an archive source with subsequent providers", async () => {
+test("defineSource shares an archive source with subsequent providers", async () => {
   const definition = defineSource(
     (source) => {
-      source.setNixSource(
-        "/tmp/source",
-        { version: "1.0.0" },
-        (attributes) => JSON.stringify(attributes),
+      source.setNixSource("/tmp/source", { version: "1.0.0" }, (attributes) =>
+        JSON.stringify(attributes),
       );
     },
     (source) => {
@@ -23,7 +25,7 @@ Deno.test("defineSource shares an archive source with subsequent providers", asy
   });
 });
 
-Deno.test("nested definitions collect returned files in the same source", async () => {
+test("nested definitions collect returned files in the same source", async () => {
   const definition = defineSource(
     () => ({ "first.txt": "first" }),
     defineSource(
@@ -38,10 +40,11 @@ Deno.test("nested definitions collect returned files in the same source", async 
   });
 });
 
-Deno.test("false discards the entire update even when forced", async () => {
+test("false discards the entire update even when forced", async () => {
   const definition = defineSource(
     (source) => {
       source.setNixSource("/tmp/source", {}, () => "generated Nix");
+
       return { "earlier.txt": "discarded" };
     },
     defineSource(() => false),
@@ -52,8 +55,10 @@ Deno.test("false discards the entire update even when forced", async () => {
   deepStrictEqual(await generateSource(definition, "/tmp/package", true), {});
 });
 
-Deno.test("attribute comparisons remain accurate when updates are forced", async () => {
-  const directory = await Deno.makeTempDir({ prefix: "nix-repin-skip-test-" });
+test("attribute comparisons remain accurate when updates are forced", async () => {
+  const directory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "nix-repin-skip-test-"),
+  );
   const file = `${directory}/source.nix`;
   const source = new Source(directory);
   const forced = new Source(directory, true);
@@ -62,10 +67,7 @@ Deno.test("attribute comparisons remain accurate when updates are forced", async
   try {
     deepStrictEqual(await source.matches(attributes), false);
     deepStrictEqual(await source.shouldSkip(unchanged), false);
-    await Deno.writeTextFile(
-      file,
-      nix.renderSource([], attributes, "  src = null;"),
-    );
+    await fs.writeFile(file, nix.renderSource([], attributes, "  src = null;"));
     deepStrictEqual(await source.matches(attributes), true);
     deepStrictEqual(await source.matches({ rev: "revision" }), true);
     deepStrictEqual(
@@ -77,11 +79,11 @@ Deno.test("attribute comparisons remain accurate when updates are forced", async
     deepStrictEqual(await forced.shouldSkip(unchanged), false);
     deepStrictEqual(await forced.matches(attributes), true);
 
-    await Deno.remove(file);
-    await Deno.mkdir(file);
-    await rejects(source.shouldSkip(unchanged), Deno.errors.IsADirectory);
+    await fs.rm(file);
+    await fs.mkdir(file);
+    await rejects(source.shouldSkip(unchanged), { code: "EISDIR" });
     deepStrictEqual(await forced.shouldSkip(unchanged), false);
   } finally {
-    await Deno.remove(directory, { recursive: true });
+    await fs.rm(directory, { recursive: true, force: true });
   }
 });

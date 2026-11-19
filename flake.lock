@@ -1,22 +1,5 @@
 {
   "nodes": {
-    "deno2nix": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1771449470,
-        "narHash": "sha256-ZGKHKRB7K5aUIyJenXwOcX21F2yTXLa19q3YXQM3E48=",
-        "owner": "aMOPel",
-        "repo": "deno2nix",
-        "rev": "adb4dcea663cd61c19e01c8c36dd73db4af358a5",
-        "type": "github"
-      },
-      "original": {
-        "owner": "aMOPel",
-        "ref": "custom-made-fetcher",
-        "repo": "deno2nix",
-        "type": "github"
-      }
-    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1784796856,
@@ -35,7 +18,6 @@
     },
     "root": {
       "inputs": {
-        "deno2nix": "deno2nix",
         "nixpkgs": "nixpkgs"
       }
     }

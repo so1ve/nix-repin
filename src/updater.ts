@@ -1,7 +1,23 @@
-import * as path from "@std/path";
+import * as fs from "node:fs/promises";
+import { registerHooks } from "node:module";
+import * as path from "node:path";
+import { pathToFileURL } from "node:url";
 
-import { Source, type SourceDefinition } from "./source.ts";
+import type { SourceDefinition } from "./source.ts";
+import { Source } from "./source.ts";
 import { writeFile } from "./write.ts";
+
+const modUrl = new URL("./mod.ts", import.meta.url).href;
+
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier === "nix-repin") {
+      return { url: modUrl, shortCircuit: true };
+    }
+
+    return nextResolve(specifier, context);
+  },
+});
 
 async function packageDirectories(
   packagesRoot: string,
@@ -12,15 +28,16 @@ async function packageDirectories(
   }
 
   const directories = [];
-  for await (const entry of Deno.readDir(packagesRoot)) {
-    if (!entry.isDirectory) {
+  for (const entry of await fs.readdir(packagesRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) {
       continue;
     }
 
     const directory = path.join(packagesRoot, entry.name);
-    for await (const file of Deno.readDir(directory)) {
-      if (file.isFile && file.name === "source.ts") {
+    for (const file of await fs.readdir(directory, { withFileTypes: true })) {
+      if (file.isFile() && file.name === "source.ts") {
         directories.push(directory);
+
         break;
       }
     }
@@ -34,8 +51,10 @@ function filePath(packageDirectory: string, relativePath: string): string {
   const file = path.resolve(packageDirectory, relativePath);
   const relative = path.relative(packageDirectory, file);
   if (
-    relative === ".." || relative.startsWith(`..${path.SEPARATOR}`) ||
-    relative === "default.nix" || relative === "source.ts"
+    relative === ".." ||
+    relative.startsWith(`..${path.sep}`) ||
+    relative === "default.nix" ||
+    relative === "source.ts"
   ) {
     throw new Error(
       `${path.basename(packageDirectory)}: invalid file path ${relativePath}`,
@@ -50,23 +69,25 @@ async function updatePackage(
   force: boolean,
 ): Promise<void> {
   const name = path.basename(packageDirectory);
-  const definition: SourceDefinition = (await import(
-    path.toFileUrl(path.resolve(packageDirectory, "source.ts")).href
-  )).default;
+  const definition: SourceDefinition = (
+    await import(
+      pathToFileURL(path.resolve(packageDirectory, "source.ts")).href
+    )
+  ).default;
   const source = new Source(path.resolve(packageDirectory), force);
   await source.apply(definition);
 
-  const changed = (await Promise.all(
-    Object.entries(source.files()).map(([relativePath, content]) => {
-      const target = filePath(packageDirectory, relativePath);
+  const changed = (
+    await Promise.all(
+      Object.entries(source.files()).map(([relativePath, content]) => {
+        const target = filePath(packageDirectory, relativePath);
 
-      return writeFile(target, content);
-    }),
-  )).some(Boolean);
+        return writeFile(target, content);
+      }),
+    )
+  ).some(Boolean);
 
-  console.log(
-    changed ? `Updated ${name}` : `${name} is already up to date`,
-  );
+  console.log(changed ? `Updated ${name}` : `${name} is already up to date`);
 }
 
 export async function updatePackages(

@@ -12,9 +12,10 @@ interface Options {
   version: string;
 }
 
-export async function fetchurl(
-  { urls, version }: Options,
-): Promise<SourceFiles> {
+export async function fetchurl({
+  urls,
+  version,
+}: Options): Promise<SourceFiles> {
   const sources = await Promise.all(
     Object.entries(urls).map(async ([system, input]) => {
       const source = typeof input === "string" ? { url: input } : input;
@@ -23,7 +24,8 @@ export async function fetchurl(
         system,
         {
           ...source,
-          hash: source.hash ??
+          hash:
+            source.hash ??
             (await nix.prefetch(source.url, { name: source.name })).hash,
         },
       ] as const;
@@ -43,9 +45,9 @@ export async function fetchurl(
         { version },
         `  src = fetchurl {
     curlOptsList = [ "--compressed" ];
-${source.name ? `    name = ${nix.string(source.name)};\n` : ""}    url = ${
-          nix.string(source.url)
-        };
+${source.name ? `    name = ${nix.string(source.name)};\n` : ""}    url = ${nix.string(
+          source.url,
+        )};
     hash = ${nix.string(source.hash)};
   };`,
       ),
@@ -53,15 +55,17 @@ ${source.name ? `    name = ${nix.string(source.name)};\n` : ""}    url = ${
   }
 
   const sourceSet = sources
-    .map(([system, source]) =>
-      `    ${nix.string(system)} = {
-${source.name ? `      name = ${nix.string(source.name)};\n` : ""}      url = ${
-        nix.string(source.url)
-      };
+    .map(
+      ([system, source]) =>
+        `    ${nix.string(system)} = {
+${source.name ? `      name = ${nix.string(source.name)};\n` : ""}      url = ${nix.string(
+          source.url,
+        )};
       hash = ${nix.string(source.hash)};
-    };`
+    };`,
     )
     .join("\n");
+  // eslint-disable-next-line no-template-curly-in-string
   const system = "${stdenv.hostPlatform.system}";
   const selectSource = sources.some(([system]) => system === "default")
     ? `  source =

@@ -1,51 +1,53 @@
 {
-  buildDenoPackage,
+  buildNpmPackage,
   coreutils,
   crane,
   darwin,
-  deno,
   git,
   lib,
   makeWrapper,
   nix,
   nix-prefetch-git,
-  nodejs_24,
+  nodejs_26,
   prefetch-npm-deps,
   stdenv,
 }:
 
 let
-  manifest = builtins.fromJSON (builtins.readFile ./deno.json);
+  manifest = builtins.fromJSON (builtins.readFile ./package.json);
   src = lib.fileset.toSource {
     root = ./.;
     fileset = lib.fileset.unions [
-      ./deno.json
-      ./deno.lock
+      ./package.json
+      ./package-lock.json
+      ./tsconfig.json
+      ./tsconfig.build.json
       ./src
     ];
   };
 in
-buildDenoPackage {
+buildNpmPackage {
   pname = "nix-repin";
   inherit (manifest) version;
   inherit src;
 
-  denoDepsHash = "sha256-9y2HHn24tbZ7UP5A52RPnEyOBLcQh6IKwXHQLgoatck=";
-  dontBuild = true;
+  nodejs = nodejs_26;
+  npmDepsHash = "sha256-1OF4YIGWJtVgrWMKmWDclJcDWlzowwYUrJ6rWCBghMo=";
   nativeBuildInputs = [ makeWrapper ];
 
   installPhase = ''
     runHook preInstall
 
+    npm prune --omit=dev
+
     mkdir -p "$out/bin" "$out/share/nix-repin"
-    cp -r . "$out/share/nix-repin"
-    # Deno looks up the bundled npm packages by registry, so ~/.npmrc must not change it.
-    echo "registry=https://registry.npmjs.org/" > "$out/share/nix-repin/.npmrc"
-    # With a scoped --allow-run, Deno refuses to spawn programs while any LD_* or DYLD_* variable is set.
-    makeWrapper ${lib.getExe deno} "$out/bin/nix-repin" \
-      --add-flags "run --cached-only --frozen --no-code-cache --no-prompt --vendor=true --config $out/share/nix-repin/deno.json --allow-env=GH_TOKEN,GITHUB_TOKEN --allow-net --allow-read --allow-run=${lib.getExe crane},${lib.getExe git},${lib.getExe nix},${lib.getExe nix-prefetch-git},${lib.getExe' nodejs_24 "npm"},${lib.getExe prefetch-npm-deps} --allow-write $out/share/nix-repin/src/cli.ts" \
-      --run 'unset "''${!LD_@}" "''${!DYLD_@}"' \
-      --set DENO_DIR "$out/share/nix-repin/.deno" \
+    cp -r package.json src types node_modules "$out/share/nix-repin"
+    rm -rf "$out/share/nix-repin/src"/*_test.ts \
+      "$out/share/nix-repin/src/providers"/*_test.ts \
+      "$out/share/nix-repin/src/test_support.ts"
+
+    makeWrapper ${lib.getExe nodejs_26} "$out/bin/nix-repin" \
+      --add-flags "$out/share/nix-repin/src/cli.ts" \
       --set PATH ${
         lib.makeBinPath (
           [
@@ -54,7 +56,7 @@ buildDenoPackage {
             git
             nix
             nix-prefetch-git
-            nodejs_24
+            nodejs_26
             prefetch-npm-deps
           ]
           # Flutter runs sw_vers on macOS.

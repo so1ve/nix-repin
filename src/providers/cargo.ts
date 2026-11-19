@@ -1,4 +1,6 @@
-import { parse } from "@std/toml";
+import * as fs from "node:fs/promises";
+
+import { parse } from "smol-toml";
 
 import * as nix from "../nix.ts";
 import type { SourceDefinition, SourceFiles } from "../source.ts";
@@ -63,18 +65,20 @@ ${hashes}
 `;
 }
 
-/** Copy a Cargo lock file from an archive source and generate its output hashes. */
-export function lock(
-  { path = "Cargo.lock" }: { path?: string } = {},
-): SourceDefinition {
-  return async (source) => {
-    const contents = await Deno.readTextFile(source.sourceFile(path));
+/**
+ * Copy a Cargo lock file from an archive source and generate its output hashes.
+ */
+export const lock =
+  ({ path = "Cargo.lock" }: { path?: string } = {}): SourceDefinition =>
+  async (source) => {
+    const contents = await fs.readFile(source.sourceFile(path), "utf8");
     const outputHashes = await Promise.all(
-      gitDependencies(contents).map(async (dependency) =>
-        [
-          dependency.name,
-          await nix.prefetchGit(dependency.url, dependency.revision),
-        ] as [string, string]
+      gitDependencies(contents).map(
+        async (dependency) =>
+          [
+            dependency.name,
+            await nix.prefetchGit(dependency.url, dependency.revision),
+          ] as [string, string],
       ),
     );
 
@@ -83,4 +87,3 @@ export function lock(
       "cargo-lock.nix": renderLock(path, outputHashes),
     } satisfies SourceFiles;
   };
-}

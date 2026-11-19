@@ -1,29 +1,38 @@
-const decoder = new TextDecoder();
+import childProcess from "node:child_process";
 
 export interface CommandOptions {
   cwd?: string;
   env?: Record<string, string>;
 }
 
-export async function runCommand(
+export const runCommand = (
   program: string,
   args: string[],
   options: CommandOptions = {},
-): Promise<string> {
-  const output = await new Deno.Command(program, {
-    args,
-    cwd: options.cwd,
-    env: options.env,
-    stderr: "piped",
-    stdout: "piped",
-  }).output();
+): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const child = childProcess.spawn(program, args, {
+      cwd: options.cwd,
+      env: options.env ? { ...process.env, ...options.env } : undefined,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
 
-  const stdout = decoder.decode(output.stdout).trim();
-  if (output.success) {
-    return stdout;
-  }
+    child.stdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
+    child.on("error", reject);
+    child.on("close", (code, signal) => {
+      const stdout = Buffer.concat(stdoutChunks).toString("utf8").trim();
+      if (code === 0) {
+        resolve(stdout);
 
-  const stderr = decoder.decode(output.stderr).trim();
-  const detail = stderr || stdout || `exit code ${output.code}`;
-  throw new Error(`${program}: ${detail}`);
-}
+        return;
+      }
+
+      const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
+      const detail =
+        stderr || stdout || (signal ? `signal ${signal}` : `exit code ${code}`);
+      reject(new Error(`${program}: ${detail}`));
+    });
+  });

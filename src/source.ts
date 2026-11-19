@@ -1,4 +1,4 @@
-import * as path from "@std/path";
+import * as path from "node:path";
 
 import { readTextFileIfExists } from "./files.ts";
 import * as nix from "./nix.ts";
@@ -12,41 +12,54 @@ interface NixSource {
   tree: string;
 }
 
-/** Mutable source state shared by providers composed with defineSource. */
+/**
+ * Mutable source state shared by providers composed with defineSource.
+ */
 export class Source {
+  public readonly packageDirectory: string;
   #files: SourceFiles = {};
+  #force: boolean;
   #nixSource: NixSource | undefined;
 
-  constructor(
-    readonly packageDirectory: string,
-    private readonly force = false,
-  ) {}
+  constructor(packageDirectory: string, force = false) {
+    this.packageDirectory = packageDirectory;
+    this.#force = force;
+  }
 
-  /** Compare attributes against the existing generated source.nix. */
-  async matches(attributes: Record<string, string>): Promise<boolean> {
+  /**
+   * Compare attributes against the existing generated source.nix.
+   */
+  public async matches(attributes: Record<string, string>): Promise<boolean> {
     const previous = await readTextFileIfExists(
       path.join(this.packageDirectory, "source.nix"),
     );
-    if (previous === undefined) return false;
+    if (previous === undefined) {
+      return false;
+    }
 
     return Object.entries(attributes).every(([name, value]) =>
-      previous.includes(`\n  ${name} = ${nix.string(value)};\n`)
+      previous.includes(`\n  ${name} = ${nix.string(value)};\n`),
     );
   }
 
-  /** Skip unchanged sources unless forced; forcing bypasses the check itself. */
-  async shouldSkip(
+  /**
+   * Skip unchanged sources unless forced; forcing bypasses the check itself.
+   */
+  public async shouldSkip(
     unchanged: () => boolean | Promise<boolean>,
   ): Promise<boolean> {
-    return !this.force && await unchanged();
+    return !this.#force && (await unchanged());
   }
 
-  /** Run a definition, collecting its files or discarding the update on false. */
-  async apply(definition: SourceDefinition): Promise<boolean> {
+  /**
+   * Run a definition, collecting its files or discarding the update on false.
+   */
+  public async apply(definition: SourceDefinition): Promise<boolean> {
     const files = await definition(this);
     if (files === false) {
       this.#files = {};
       this.#nixSource = undefined;
+
       return false;
     }
     if (files !== undefined) {
@@ -56,32 +69,33 @@ export class Source {
     return true;
   }
 
-  addFiles(files: SourceFiles): void {
-    for (const [path, source] of Object.entries(files)) {
-      if (path === "source.nix" && this.#nixSource !== undefined) {
+  public addFiles(files: SourceFiles): void {
+    for (const [filePath, source] of Object.entries(files)) {
+      if (filePath === "source.nix" && this.#nixSource !== undefined) {
         throw new Error("source.nix is managed by another provider");
       }
-      if (this.#files[path] !== undefined) {
-        throw new Error(`multiple providers generate ${path}`);
+      if (this.#files[filePath] !== undefined) {
+        throw new Error(`multiple providers generate ${filePath}`);
       }
-      this.#files[path] = source;
+      this.#files[filePath] = source;
     }
   }
 
-  setNixSource(
+  public setNixSource(
     tree: string,
     attributes: Record<string, string>,
     render: (attributes: Record<string, string>) => string,
   ): void {
     if (
-      this.#nixSource !== undefined || this.#files["source.nix"] !== undefined
+      this.#nixSource !== undefined ||
+      this.#files["source.nix"] !== undefined
     ) {
       throw new Error("multiple providers generate source.nix");
     }
     this.#nixSource = { attributes, render, tree };
   }
 
-  addNixAttribute(name: string, value: string): void {
+  public addNixAttribute(name: string, value: string): void {
     if (this.#nixSource === undefined) {
       throw new Error("provider requires an archive source");
     }
@@ -91,20 +105,21 @@ export class Source {
     this.#nixSource.attributes[name] = value;
   }
 
-  sourceFile(file: string): string {
+  public sourceFile(file: string): string {
     if (this.#nixSource === undefined) {
       throw new Error("provider requires an archive source");
     }
 
     const target = path.resolve(this.#nixSource.tree, file);
     const relative = path.relative(this.#nixSource.tree, target);
-    if (relative === ".." || relative.startsWith(`..${path.SEPARATOR}`)) {
+    if (relative === ".." || relative.startsWith(`..${path.sep}`)) {
       throw new Error(`source file must be within the archive: ${file}`);
     }
+
     return target;
   }
 
-  files(): SourceFiles {
+  public files(): SourceFiles {
     return {
       ...this.#files,
       ...(this.#nixSource
@@ -114,21 +129,19 @@ export class Source {
   }
 }
 
-export type SourceDefinition = (source: Source) =>
-  | void
-  | false
-  | SourceFiles
-  | Promise<void | false | SourceFiles>;
+export type SourceDefinition = (
+  source: Source,
+) => void | false | SourceFiles | Promise<void | false | SourceFiles>;
 
-/** Compose providers so they share one source archive and generated output. */
-export function defineSource(
-  ...definitions: SourceDefinition[]
-): SourceDefinition {
-  return async (source) => {
+/**
+ * Compose providers so they share one source archive and generated output.
+ */
+export const defineSource =
+  (...definitions: SourceDefinition[]): SourceDefinition =>
+  async (source) => {
     for (const definition of definitions) {
-      if (!await source.apply(definition)) {
+      if (!(await source.apply(definition))) {
         return false;
       }
     }
   };
-}

@@ -18,9 +18,12 @@ interface QueryResponse {
   totalSize: number;
 }
 
-/** Track a universal VSIX from Open VSX, selecting stable releases by default. */
-export function extension(options: ExtensionOptions): SourceDefinition {
-  return async () => {
+/**
+ * Track a universal VSIX from Open VSX, selecting stable releases by default.
+ */
+export const extension =
+  (options: ExtensionOptions): SourceDefinition =>
+  async () => {
     const id = `${options.namespace}.${options.name}`;
     const url = new URL("https://open-vsx.org/api/-/query");
     url.searchParams.set("extensionId", id);
@@ -35,11 +38,12 @@ export function extension(options: ExtensionOptions): SourceDefinition {
       url.searchParams.set("offset", String(offset));
       const response = await fetch(url);
       if (!response.ok) {
-        throw new Error(`${id}: ${url} returned ${response.status}`);
+        throw new Error(`${id}: ${url.href} returned ${response.status}`);
       }
-      const page = await response.json() as QueryResponse;
-      const release = page.extensions.find((release) =>
-        options.includePrerelease || release.preRelease === false
+      const page = (await response.json()) as QueryResponse;
+      const release = page.extensions.find(
+        (release) =>
+          Boolean(options.includePrerelease) || release.preRelease === false,
       );
       if (release) {
         return fetchurl({
@@ -51,8 +55,8 @@ export function extension(options: ExtensionOptions): SourceDefinition {
       offset += page.extensions.length;
       if (page.extensions.length === 0 || offset >= page.totalSize) {
         const kind = options.includePrerelease ? "" : "stable ";
+
         throw new Error(`${id}: no ${kind}universal release found on Open VSX`);
       }
     }
   };
-}

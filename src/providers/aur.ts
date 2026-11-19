@@ -3,23 +3,32 @@ import { template } from "../template.ts";
 import { fetchurl } from "./fetchurl.ts";
 
 interface PackageOptions {
-  /** Published AUR package name. */
+  /**
+   * Published AUR package name.
+   */
   name: string;
-  /** Download URLs by Nix system, with {version} and {system} placeholders. */
+  /**
+   * Download URLs by Nix system, with {version} and {system} placeholders.
+   */
   urls: Record<string, string>;
 }
 
-/** Track an AUR package's upstream version without executing its PKGBUILD. */
-export function pkg(options: PackageOptions): SourceDefinition {
-  return async () => {
+/**
+ * Track an AUR package's upstream version without executing its PKGBUILD.
+ */
+export const pkg =
+  (options: PackageOptions): SourceDefinition =>
+  async () => {
     const url = new URL("https://aur.archlinux.org/rpc/v5/info");
     url.searchParams.set("arg[]", options.name);
     const response = await fetch(url);
     if (!response.ok) {
-      throw new Error(`${options.name}: ${url} returned ${response.status}`);
+      throw new Error(
+        `${options.name}: ${url.href} returned ${response.status}`,
+      );
     }
 
-    const data = await response.json() as {
+    const data = (await response.json()) as {
       error?: string;
       results?: { Name: string; Version: string }[];
       type: string;
@@ -33,10 +42,7 @@ export function pkg(options: PackageOptions): SourceDefinition {
       throw new Error(`${options.name}: package not found in AUR`);
     }
 
-    const version = result.Version.replace(/^[0-9]+:/, "").replace(
-      /-[^-]+$/,
-      "",
-    );
+    const version = result.Version.replace(/^\d+:/, "").replace(/-[^-]+$/, "");
     const urls = Object.fromEntries(
       Object.entries(options.urls).map(([system, source]) => [
         system,
@@ -46,4 +52,3 @@ export function pkg(options: PackageOptions): SourceDefinition {
 
     return fetchurl({ urls, version });
   };
-}
