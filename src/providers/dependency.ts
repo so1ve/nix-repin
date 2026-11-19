@@ -66,3 +66,30 @@ in
 
     throw new Error(`${derivation}: expected a fixed-output hash mismatch`);
   };
+
+const lockProvider = (defaultAttribute: string, hashAttribute: string) => ({
+  lock: ({
+    attribute = defaultAttribute,
+  }: { attribute?: string } = {}): SourceDefinition =>
+    dependencyHash(attribute, hashAttribute),
+});
+
+/**
+ * Update bunDepsHash from the package's node_modules derivation.
+ */
+export const bun = lockProvider("node_modules", "bunDepsHash");
+
+/**
+ * Update vendorHash from the package's goModules derivation.
+ */
+export const go = lockProvider("goModules", "vendorHash");
+
+/**
+ * Update pnpmDepsHash from the package's pnpmDeps derivation.
+ */
+export const pnpm = lockProvider("pnpmDeps", "pnpmDepsHash");
+
+/**
+ * Update yarnDepsHash from the package's Yarn offline cache derivation.
+ */
+export const yarn = lockProvider("yarnOfflineCache", "yarnDepsHash");

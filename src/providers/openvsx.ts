@@ -23,7 +23,7 @@ interface QueryResponse {
  */
 export const extension =
   (options: ExtensionOptions): SourceDefinition =>
-  async () => {
+  async (source) => {
     const id = `${options.namespace}.${options.name}`;
     const url = new URL("https://open-vsx.org/api/-/query");
     url.searchParams.set("extensionId", id);
@@ -46,6 +46,14 @@ export const extension =
           Boolean(options.includePrerelease) || release.preRelease === false,
       );
       if (release) {
+        if (
+          await source.shouldSkip(() =>
+            source.matches({ version: release.version }),
+          )
+        ) {
+          return false;
+        }
+
         return fetchurl({
           urls: { default: release.files.download },
           version: release.version,

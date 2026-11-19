@@ -23,7 +23,7 @@ interface QueryResponse {
  */
 export const extension =
   (options: ExtensionOptions): SourceDefinition =>
-  async () => {
+  async (source) => {
     const id = `${options.publisher}.${options.name}`;
     const url =
       "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery";
@@ -71,6 +71,14 @@ export const extension =
       }
       available.add(release.targetPlatform ?? "universal");
       if (platforms.every(([, platform]) => available.has(platform))) {
+        if (
+          await source.shouldSkip(() =>
+            source.matches({ version: release.version }),
+          )
+        ) {
+          return false;
+        }
+
         const urls = Object.fromEntries(
           platforms.map(([system, platform]) => {
             const download = new URL(

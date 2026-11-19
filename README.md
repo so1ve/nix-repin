@@ -60,8 +60,8 @@ export default defineSource(
 generated output. Here, `github.release` fetches the source, then `npm.lock`
 reads `app/package-lock.json` from it and adds `npmDepsHash` to `source.nix`.
 
-Git, GitHub archive, and npm providers skip the update when their tracked
-revision or version is unchanged. After changing `source.ts` or the dependency
+Versioned providers (Git, GitHub, npm, AUR, Open VSX, and Marketplace) skip the
+update when their tracked revision or version is unchanged. After changing `source.ts` or the dependency
 setup in `default.nix`, force regeneration for that run:
 
 ```sh

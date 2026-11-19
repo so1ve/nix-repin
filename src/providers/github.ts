@@ -203,6 +203,10 @@ export const release =
     );
     const release = releases.find((release) => release.tag_name === tag)!;
     if (options.assets) {
+      if (await source.shouldSkip(() => source.matches({ version }))) {
+        return false;
+      }
+
       const urls = Object.fromEntries(
         Object.entries(options.assets).map(([system, source]) => {
           const assetTemplate = template(source);

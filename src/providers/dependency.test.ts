@@ -7,8 +7,7 @@ import * as nix from "../nix.ts";
 import type { SourceDefinition } from "../source.ts";
 import { defineSource } from "../source.ts";
 import { generateSource, withCommands } from "../test-support.ts";
-import * as pnpm from "./pnpm.ts";
-import * as yarn from "./yarn.ts";
+import { pnpm, yarn } from "./dependency.ts";
 
 const derivation = "/nix/store/example-dependencies.drv";
 const hash = "sha256-Bta1tf1e34LoaOYhd/iN48LkCM7/jfTN4GHKHmi6758=";

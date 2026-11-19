@@ -18,7 +18,7 @@ interface PackageOptions {
  */
 export const pkg =
   (options: PackageOptions): SourceDefinition =>
-  async () => {
+  async (source) => {
     const url = new URL("https://aur.archlinux.org/rpc/v5/info");
     url.searchParams.set("arg[]", options.name);
     const response = await fetch(url);
@@ -43,6 +43,10 @@ export const pkg =
     }
 
     const version = result.Version.replace(/^\d+:/, "").replace(/-[^-]+$/, "");
+    if (await source.shouldSkip(() => source.matches({ version }))) {
+      return false;
+    }
+
     const urls = Object.fromEntries(
       Object.entries(options.urls).map(([system, source]) => [
         system,
