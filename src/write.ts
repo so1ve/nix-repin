@@ -46,8 +46,8 @@ async function filesEqual(
     return false;
   }
 
-  const leftBuffer = Buffer.allocUnsafe(bufferSize);
-  const rightBuffer = Buffer.allocUnsafe(bufferSize);
+  const leftBuffer = Buffer.alloc(bufferSize);
+  const rightBuffer = Buffer.alloc(bufferSize);
   let remaining = leftStat.size;
   while (remaining > 0) {
     const length = Math.min(bufferSize, remaining);

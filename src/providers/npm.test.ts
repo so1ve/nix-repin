@@ -1,18 +1,15 @@
 import { deepStrictEqual } from "node:assert/strict";
 import * as fs from "node:fs/promises";
-import * as os from "node:os";
-import * as path from "node:path";
 import { test } from "node:test";
 
+import { tempDir } from "../files.ts";
 import * as nix from "../nix.ts";
 import { defineSource } from "../source.ts";
-import { generateSource, withCommands } from "../test_support.ts";
+import { generateSource, withCommands } from "../test-support.ts";
 import { pkg, tarball } from "./npm.ts";
 
 test("pkg skips lock generation when the package version is current", async () => {
-  const directory = await fs.mkdtemp(
-    path.join(os.tmpdir(), "nix-repin-npm-test-"),
-  );
+  await using tmp = await tempDir("nix-repin-npm-test-");
   const name = "@scope/program";
   const version = "1.2.3";
   const originalFetch = globalThis.fetch;
@@ -20,22 +17,19 @@ test("pkg skips lock generation when the package version is current", async () =
 
   try {
     await fs.writeFile(
-      `${directory}/package.json`,
+      `${tmp.path}/package.json`,
       JSON.stringify({ dependencies: { [name]: version } }),
     );
 
-    const files = await generateSource(pkg({ name }), directory);
+    const files = await generateSource(pkg({ name }), tmp.path);
     deepStrictEqual(files, {});
   } finally {
     globalThis.fetch = originalFetch;
-    await fs.rm(directory, { recursive: true, force: true });
   }
 });
 
 test("tarball skips the whole source update when its version is current", async () => {
-  const directory = await fs.mkdtemp(
-    path.join(os.tmpdir(), "nix-repin-npm-test-"),
-  );
+  await using tmp = await tempDir("nix-repin-npm-test-");
   const version = "2.0.0-beta.1";
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (url) => {
@@ -51,7 +45,7 @@ test("tarball skips the whole source update when its version is current", async 
 
   try {
     await fs.writeFile(
-      `${directory}/source.nix`,
+      `${tmp.path}/source.nix`,
       nix.renderSource(["fetchurl"], { version }, "  src = null;"),
     );
     const definition = defineSource(
@@ -65,17 +59,14 @@ test("tarball skips the whole source update when its version is current", async 
         throw new Error("later providers must not run");
       },
     );
-    deepStrictEqual(await generateSource(definition, directory), {});
+    deepStrictEqual(await generateSource(definition, tmp.path), {});
   } finally {
     globalThis.fetch = originalFetch;
-    await fs.rm(directory, { recursive: true, force: true });
   }
 });
 
 test("forcing an npm package regenerates its lock file at the same version", async () => {
-  const directory = await fs.mkdtemp(
-    path.join(os.tmpdir(), "nix-repin-npm-test-"),
-  );
+  await using tmp = await tempDir("nix-repin-npm-test-");
   const name = "@scope/program";
   const version = "1.2.3";
   const lock = '{"lockfileVersion":3}\n';
@@ -84,7 +75,7 @@ test("forcing an npm package regenerates its lock file at the same version", asy
   globalThis.fetch = () => Promise.resolve(Response.json({ version }));
   try {
     await fs.writeFile(
-      `${directory}/package.json`,
+      `${tmp.path}/package.json`,
       JSON.stringify({ dependencies: { [name]: version } }),
     );
     const files = await withCommands(
@@ -99,7 +90,7 @@ test("forcing an npm package regenerates its lock file at the same version", asy
 
         return { stdout: hash };
       },
-      () => generateSource(pkg({ name }), directory, true),
+      () => generateSource(pkg({ name }), tmp.path, true),
     );
     deepStrictEqual(files["package-lock.json"], lock);
     deepStrictEqual(JSON.parse(files["package.json"] as string).dependencies, {
@@ -117,6 +108,5 @@ test("forcing an npm package regenerates its lock file at the same version", asy
     );
   } finally {
     globalThis.fetch = originalFetch;
-    await fs.rm(directory, { recursive: true, force: true });
   }
 });

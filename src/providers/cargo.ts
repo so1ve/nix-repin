@@ -1,5 +1,3 @@
-import * as fs from "node:fs/promises";
-
 import { parse } from "smol-toml";
 
 import * as nix from "../nix.ts";
@@ -71,7 +69,7 @@ ${hashes}
 export const lock =
   ({ path = "Cargo.lock" }: { path?: string } = {}): SourceDefinition =>
   async (source) => {
-    const contents = await fs.readFile(source.sourceFile(path), "utf8");
+    const contents = await source.readSourceFile(path);
     const outputHashes = await Promise.all(
       gitDependencies(contents).map(
         async (dependency) =>

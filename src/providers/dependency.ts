@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import * as fs from "node:fs/promises";
-import * as os from "node:os";
-import * as path from "node:path";
 
 import { runCommand } from "../command.ts";
+import { tempDir } from "../files.ts";
 import * as nix from "../nix.ts";
 import type { SourceDefinition } from "../source.ts";
 
@@ -20,12 +19,10 @@ export const dependencyHash =
       `${hashAttribute} requires an archive source`,
     );
 
-    const directory = await fs.mkdtemp(
-      path.join(os.tmpdir(), "nix-repin-dependency-"),
-    );
-    try {
-      await fs.writeFile(`${directory}/source.nix`, generated);
-      const expression = `let
+    await using tmp = await tempDir("nix-repin-dependency-");
+    const directory = tmp.path;
+    await fs.writeFile(`${directory}/source.nix`, generated);
+    const expression = `let
   flake = builtins.getFlake ${nix.string(`path:${root}`)};
   pkgs = flake.inputs.nixpkgs.legacyPackages.\${builtins.currentSystem};
   source = (pkgs.callPackage ${nix.string(`${directory}/source.nix`)} { }) // {
@@ -36,39 +33,36 @@ in
   inherit source;
 }).${attribute}`;
 
-      const derivation = await runCommand("nix", [
-        "eval",
-        "--raw",
-        "--impure",
-        "--expr",
-        `(${expression}).drvPath`,
-      ]);
+    const derivation = await runCommand("nix", [
+      "eval",
+      "--raw",
+      "--impure",
+      "--expr",
+      `(${expression}).drvPath`,
+    ]);
 
-      try {
-        await runCommand("nix", ["build", "--no-link", `${derivation}^out`]);
-      } catch (error) {
-        if (!(error instanceof Error)) {
-          throw error;
-        }
-        const marker = `hash mismatch in fixed-output derivation '${derivation}':`;
-        const position = error.message.indexOf(marker);
-        const hash =
-          position === -1
-            ? undefined
-            : error.message
-                .slice(position + marker.length)
-                .match(/\bgot:\s+(sha256-[A-Za-z0-9+/]{43}=)/)?.[1];
-        if (!hash) {
-          throw error;
-        }
-
-        source.addNixAttribute(hashAttribute, hash);
-
-        return;
+    try {
+      await runCommand("nix", ["build", "--no-link", `${derivation}^out`]);
+    } catch (error) {
+      if (!(error instanceof Error)) {
+        throw error;
+      }
+      const marker = `hash mismatch in fixed-output derivation '${derivation}':`;
+      const position = error.message.indexOf(marker);
+      const hash =
+        position === -1
+          ? undefined
+          : error.message
+              .slice(position + marker.length)
+              .match(/\bgot:\s+(sha256-[A-Za-z0-9+/]{43}=)/)?.[1];
+      if (!hash) {
+        throw error;
       }
 
-      throw new Error(`${derivation}: expected a fixed-output hash mismatch`);
-    } finally {
-      await fs.rm(directory, { recursive: true, force: true });
+      source.addNixAttribute(hashAttribute, hash);
+
+      return;
     }
+
+    throw new Error(`${derivation}: expected a fixed-output hash mismatch`);
   };

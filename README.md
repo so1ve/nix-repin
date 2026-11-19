@@ -431,7 +431,7 @@ download. These functions can also be combined with other providers through
 `defineSource`.
 
 Each function receives the shared `Source` as its argument. It can read files
-from the fetched tree with `source.sourceFile(path)` or add Nix attributes with
+from the fetched tree with `source.sourceFile(path)` / `source.readSourceFile(path)` or add Nix attributes with
 `source.addNixAttribute(name, value)`. Returning `false` skips the entire update
 and discards the output collected so far.
 
@@ -498,17 +498,19 @@ const files = {
 <details>
 <summary>Reusable tools</summary>
 
-| Tool                                                    | Result                                                                                  |
-| ------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `github.latestCommit({ repository, branch?, before? })` | `rev`, `date`; follows the default branch unless `branch` is set.                       |
-| `github.prefetchArchive(repository, revision)`          | Unpacked `storePath`, `url`, `hash`.                                                    |
-| `npm.writeLock(directory, options?)`                    | Writes `package-lock.json` from `package.json`, without scripts or module installation. |
-| `npm.hash(lockPath)`                                    | `npmDepsHash`.                                                                          |
-| `nix.prefetch(url, { unpack?, name? })`                 | `hash`, `storePath`.                                                                    |
-| `nix.prefetchGit(url, revision)`                        | Git checkout hash.                                                                      |
-| `nix.prefetchGitSource(url, revision)`                  | `rev`, `date`, `hash`, `storePath`; excludes submodules.                                |
-| `copyTree(from, to)`                                    | Copies a tree, preserving symlinks and permissions and adding owner write access.       |
-| `runCommand(program, args, { cwd?, env? })`             | Trimmed stdout; throws with command output on failure.                                  |
+| Tool                                                    | Result                                                                                   |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `github.latestCommit({ repository, branch?, before? })` | `rev`, `date`; follows the default branch unless `branch` is set.                        |
+| `github.octokit`                                        | Pre-authenticated Octokit client using `GITHUB_TOKEN` or `GH_TOKEN`.                     |
+| `github.prefetchArchive(repository, revision)`          | Unpacked `storePath`, `url`, `hash`.                                                     |
+| `npm.writeLock(directory, options?)`                    | Writes `package-lock.json` from `package.json`, without scripts or module installation.  |
+| `npm.hash(lockPath)`                                    | `npmDepsHash`.                                                                           |
+| `nix.prefetch(url, { unpack?, name? })`                 | `hash`, `storePath`.                                                                     |
+| `nix.prefetchGit(url, revision)`                        | Git checkout hash.                                                                       |
+| `nix.prefetchGitSource(url, revision)`                  | `rev`, `date`, `hash`, `storePath`; excludes submodules.                                 |
+| `tempDir(prefix)`                                       | Disposable temporary directory (`await using dir = await tempDir(...)`) with `dir.path`. |
+| `copyTree(from, to)`                                    | Copies a tree, preserving symlinks and permissions and adding owner write access.        |
+| `runCommand(program, args, { cwd?, env? })`             | Trimmed stdout; throws with command output on failure.                                   |
 
 `npm.writeLock` accepts `registry`, `legacyPeerDeps`, and `before` (an ISO 8601
 cutoff for package and dependency versions). Create `package.json` first; the
@@ -518,22 +520,17 @@ caller must clean up the directory, including `directory/cache`.
 
 ## TypeScript types
 
-The Nix package includes generated type declarations at
-`$out/share/nix-repin`. To enable editor completion and type checking
-for `import { ... } from "nix-repin"` in your repository without running npm,
-link the package into `node_modules` from your devShell (and add `node_modules`
-to `.gitignore`):
+The Nix package includes generated type declarations, `@types/node`, and a
+ready-to-extend `tsconfig.consumer.json` at `$out/share/nix-repin`. To enable
+editor completion and type checking for `source.ts` without `package.json` or
+`node_modules`, extend it from your repository's `tsconfig.json` (for example
+via `devenv.nix`):
 
 ```nix
-shellHook = ''
-  mkdir -p node_modules
-  ln -sfn ${nix-repin}/share/nix-repin node_modules/nix-repin
-'';
+files."tsconfig.json".json.extends = "${nix-repin}/share/nix-repin/tsconfig.consumer.json";
 ```
 
-Alternatively, install `nix-repin` as a devDependency in `package.json`.
-
-See [mod.ts](src/mod.ts) for exports and [nix.ts](src/nix.ts) for Nix helpers.
+See [index.ts](src/index.ts) for exports and [nix.ts](src/nix.ts) for Nix helpers.
 
 ## License
 

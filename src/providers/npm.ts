@@ -1,9 +1,8 @@
 import * as fs from "node:fs/promises";
-import * as os from "node:os";
 import * as path from "node:path";
 
 import { runCommand } from "../command.ts";
-import { readTextFileIfExists } from "../files.ts";
+import { readTextFileIfExists, tempDir } from "../files.ts";
 import * as nix from "../nix.ts";
 import type { SourceDefinition, SourceFiles } from "../source.ts";
 import { fetchurl } from "./fetchurl.ts";
@@ -145,23 +144,19 @@ async function lockedPackage(
   registry: string,
   manifest: string,
 ): Promise<SourceFiles> {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "nix-repin-npm-"));
-  const lockPath = `${directory}/package-lock.json`;
-  try {
-    await fs.writeFile(`${directory}/package.json`, manifest);
-    await writeLock(directory, { registry });
+  await using tmp = await tempDir("nix-repin-npm-");
+  const lockPath = `${tmp.path}/package-lock.json`;
+  await fs.writeFile(`${tmp.path}/package.json`, manifest);
+  await writeLock(tmp.path, { registry });
 
-    const lock = await fs.readFile(lockPath, "utf8");
-    const npmDepsHash = await hash(lockPath);
+  const lock = await fs.readFile(lockPath, "utf8");
+  const npmDepsHash = await hash(lockPath);
 
-    return {
-      "package.json": manifest,
-      "package-lock.json": lock,
-      "source.nix": sourceNix(version, npmDepsHash),
-    };
-  } finally {
-    await fs.rm(directory, { recursive: true, force: true });
-  }
+  return {
+    "package.json": manifest,
+    "package-lock.json": lock,
+    "source.nix": sourceNix(version, npmDepsHash),
+  };
 }
 
 /**

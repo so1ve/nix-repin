@@ -1,46 +1,40 @@
 import { deepStrictEqual, rejects } from "node:assert/strict";
 import * as fs from "node:fs/promises";
-import * as os from "node:os";
-import * as path from "node:path";
 import { test } from "node:test";
 
+import { tempDir } from "../files.ts";
 import * as nix from "../nix.ts";
-import { generateSource, withCommands } from "../test_support.ts";
+import { generateSource, withCommands } from "../test-support.ts";
 import { image, tag } from "./oci.ts";
 
 test("OCI refreshes a moving tag even when source.nix already exists", async () => {
-  const directory = await fs.mkdtemp(
-    path.join(os.tmpdir(), "nix-repin-oci-test-"),
-  );
+  await using tmp = await tempDir("nix-repin-oci-test-");
   const repository = "registry.example:5000/team/image";
   let digest = `sha256:${"a".repeat(64)}`;
-  try {
-    await withCommands(
-      (program, args) => {
-        deepStrictEqual(program, "crane");
-        deepStrictEqual(args, ["digest", "--", `${repository}:latest`]);
 
-        return { stdout: digest };
-      },
-      async () => {
-        const definition = tag({ repository, tag: "latest" });
-        const first = await generateSource(definition, directory);
-        await fs.writeFile(
-          `${directory}/source.nix`,
-          first["source.nix"] as string,
-        );
-        digest = `sha256:${"b".repeat(64)}`;
-        deepStrictEqual(await generateSource(definition, directory), {
-          "source.nix": `${nix.HEADER}{
+  await withCommands(
+    (program, args) => {
+      deepStrictEqual(program, "crane");
+      deepStrictEqual(args, ["digest", "--", `${repository}:latest`]);
+
+      return { stdout: digest };
+    },
+    async () => {
+      const definition = tag({ repository, tag: "latest" });
+      const first = await generateSource(definition, tmp.path);
+      await fs.writeFile(
+        `${tmp.path}/source.nix`,
+        first["source.nix"] as string,
+      );
+      digest = `sha256:${"b".repeat(64)}`;
+      deepStrictEqual(await generateSource(definition, tmp.path), {
+        "source.nix": `${nix.HEADER}{
   image = "registry.example:5000/team/image:latest@${digest}";
 }
 `,
-        });
-      },
-    );
-  } finally {
-    await fs.rm(directory, { recursive: true, force: true });
-  }
+      });
+    },
+  );
 });
 
 test("OCI selects the highest matching tag using semantic version order", async () => {

@@ -1,13 +1,12 @@
 import { deepStrictEqual, rejects } from "node:assert/strict";
 import * as fs from "node:fs/promises";
-import * as os from "node:os";
-import * as path from "node:path";
 import { test } from "node:test";
 
+import { tempDir } from "../files.ts";
 import * as nix from "../nix.ts";
 import type { SourceDefinition } from "../source.ts";
 import { defineSource } from "../source.ts";
-import { generateSource, withCommands } from "../test_support.ts";
+import { generateSource, withCommands } from "../test-support.ts";
 import * as pnpm from "./pnpm.ts";
 import * as yarn from "./yarn.ts";
 
@@ -20,42 +19,33 @@ async function generate(
   hashAttribute: string,
   stderr: string,
 ) {
-  const directory = await fs.mkdtemp(
-    path.join(os.tmpdir(), "nix-repin-dependency-test-"),
-  );
-  try {
-    await fs.writeFile(`${directory}/flake.nix`, "{}");
-    const definition = defineSource((source) => {
-      source.setNixSource("/tmp/source", { version: "1.0.0" }, (attributes) =>
-        nix.renderSource([], attributes, "  src = null;"),
-      );
-    }, lock);
-
-    return await withCommands(
-      (program, args) => {
-        deepStrictEqual(program, "nix");
-        if (args[0] === "eval") {
-          const expression = args.at(-1)!;
-          deepStrictEqual(
-            expression.includes(`}).${attribute}).drvPath`),
-            true,
-          );
-          deepStrictEqual(
-            expression.includes(`${hashAttribute} = pkgs.lib.fakeHash;`),
-            true,
-          );
-
-          return { stdout: derivation };
-        }
-        deepStrictEqual(args, ["build", "--no-link", `${derivation}^out`]);
-
-        return { code: 1, stderr };
-      },
-      () => generateSource(definition, directory),
+  await using tmp = await tempDir("nix-repin-dependency-test-");
+  await fs.writeFile(`${tmp.path}/flake.nix`, "{}");
+  const definition = defineSource((source) => {
+    source.setNixSource("/tmp/source", { version: "1.0.0" }, (attributes) =>
+      nix.renderSource([], attributes, "  src = null;"),
     );
-  } finally {
-    await fs.rm(directory, { recursive: true, force: true });
-  }
+  }, lock);
+
+  return withCommands(
+    (program, args) => {
+      deepStrictEqual(program, "nix");
+      if (args[0] === "eval") {
+        const expression = args.at(-1)!;
+        deepStrictEqual(expression.includes(`}).${attribute}).drvPath`), true);
+        deepStrictEqual(
+          expression.includes(`${hashAttribute} = pkgs.lib.fakeHash;`),
+          true,
+        );
+
+        return { stdout: derivation };
+      }
+      deepStrictEqual(args, ["build", "--no-link", `${derivation}^out`]);
+
+      return { code: 1, stderr };
+    },
+    () => generateSource(definition, tmp.path),
+  );
 }
 
 test("lock providers select Yarn caches and nested dependency derivations", async () => {

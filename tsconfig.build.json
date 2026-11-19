@@ -8,5 +8,5 @@
     "outDir": "types"
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/**/*_test.ts", "src/cli.ts", "src/test_support.ts"]
+  "exclude": ["src/**/*.test.ts", "src/cli.ts", "src/test-support.ts"]
 }

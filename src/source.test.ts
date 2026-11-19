@@ -1,12 +1,11 @@
 import { deepStrictEqual, rejects } from "node:assert/strict";
 import * as fs from "node:fs/promises";
-import * as os from "node:os";
-import * as path from "node:path";
 import { test } from "node:test";
 
+import { tempDir } from "./files.ts";
 import * as nix from "./nix.ts";
 import { Source, defineSource } from "./source.ts";
-import { generateSource } from "./test_support.ts";
+import { generateSource } from "./test-support.ts";
 
 test("defineSource shares an archive source with subsequent providers", async () => {
   const definition = defineSource(
@@ -56,34 +55,29 @@ test("false discards the entire update even when forced", async () => {
 });
 
 test("attribute comparisons remain accurate when updates are forced", async () => {
-  const directory = await fs.mkdtemp(
-    path.join(os.tmpdir(), "nix-repin-skip-test-"),
-  );
-  const file = `${directory}/source.nix`;
-  const source = new Source(directory);
-  const forced = new Source(directory, true);
+  await using tmp = await tempDir("nix-repin-skip-test-");
+  const file = `${tmp.path}/source.nix`;
+  const source = new Source(tmp.path);
+  const forced = new Source(tmp.path, true);
   const attributes = { rev: "revision", version: "1.0.0" };
   const unchanged = () => source.matches(attributes);
-  try {
-    deepStrictEqual(await source.matches(attributes), false);
-    deepStrictEqual(await source.shouldSkip(unchanged), false);
-    await fs.writeFile(file, nix.renderSource([], attributes, "  src = null;"));
-    deepStrictEqual(await source.matches(attributes), true);
-    deepStrictEqual(await source.matches({ rev: "revision" }), true);
-    deepStrictEqual(
-      await source.matches({ ...attributes, version: "2.0.0" }),
-      false,
-    );
-    deepStrictEqual(await source.matches({ missing: "value" }), false);
-    deepStrictEqual(await source.shouldSkip(unchanged), true);
-    deepStrictEqual(await forced.shouldSkip(unchanged), false);
-    deepStrictEqual(await forced.matches(attributes), true);
 
-    await fs.rm(file);
-    await fs.mkdir(file);
-    await rejects(source.shouldSkip(unchanged), { code: "EISDIR" });
-    deepStrictEqual(await forced.shouldSkip(unchanged), false);
-  } finally {
-    await fs.rm(directory, { recursive: true, force: true });
-  }
+  deepStrictEqual(await source.matches(attributes), false);
+  deepStrictEqual(await source.shouldSkip(unchanged), false);
+  await fs.writeFile(file, nix.renderSource([], attributes, "  src = null;"));
+  deepStrictEqual(await source.matches(attributes), true);
+  deepStrictEqual(await source.matches({ rev: "revision" }), true);
+  deepStrictEqual(
+    await source.matches({ ...attributes, version: "2.0.0" }),
+    false,
+  );
+  deepStrictEqual(await source.matches({ missing: "value" }), false);
+  deepStrictEqual(await source.shouldSkip(unchanged), true);
+  deepStrictEqual(await forced.shouldSkip(unchanged), false);
+  deepStrictEqual(await forced.matches(attributes), true);
+
+  await fs.rm(file);
+  await fs.mkdir(file);
+  await rejects(source.shouldSkip(unchanged), { code: "EISDIR" });
+  deepStrictEqual(await forced.shouldSkip(unchanged), false);
 });

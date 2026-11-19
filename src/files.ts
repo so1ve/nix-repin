@@ -1,4 +1,5 @@
 import * as fs from "node:fs/promises";
+import * as os from "node:os";
 import * as path from "node:path";
 
 export const isNotFound = (error: unknown): boolean =>
@@ -17,6 +18,13 @@ export async function readTextFileIfExists(
     throw error;
   }
 }
+
+/**
+ * Create a temporary directory removed automatically when used with `await
+ * using`.
+ */
+export const tempDir = (prefix: string): Promise<fs.DisposableTempDir> =>
+  fs.mkdtempDisposable(path.join(os.tmpdir(), prefix));
 
 /**
  * Copy a tree into a writable directory, preserving symlinks and modes.

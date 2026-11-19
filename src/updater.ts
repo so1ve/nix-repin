@@ -3,21 +3,34 @@ import { registerHooks } from "node:module";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { isNotFound } from "./files.ts";
 import type { SourceDefinition } from "./source.ts";
 import { Source } from "./source.ts";
 import { writeFile } from "./write.ts";
 
-const modUrl = new URL("./mod.ts", import.meta.url).href;
+const entryUrl = new URL("./index.ts", import.meta.url).href;
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier === "nix-repin") {
-      return { url: modUrl, shortCircuit: true };
+      return { url: entryUrl, shortCircuit: true };
     }
 
     return nextResolve(specifier, context);
   },
 });
+
+async function hasSourceDefinition(directory: string): Promise<boolean> {
+  try {
+    return (await fs.stat(path.join(directory, "source.ts"))).isFile();
+  } catch (error) {
+    if (isNotFound(error)) {
+      return false;
+    }
+
+    throw error;
+  }
+}
 
 async function packageDirectories(
   packagesRoot: string,
@@ -34,12 +47,8 @@ async function packageDirectories(
     }
 
     const directory = path.join(packagesRoot, entry.name);
-    for (const file of await fs.readdir(directory, { withFileTypes: true })) {
-      if (file.isFile() && file.name === "source.ts") {
-        directories.push(directory);
-
-        break;
-      }
+    if (await hasSourceDefinition(directory)) {
+      directories.push(directory);
     }
   }
   directories.sort();

@@ -1,3 +1,4 @@
+import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
 import { readTextFileIfExists } from "./files.ts";
@@ -117,6 +118,13 @@ export class Source {
     }
 
     return target;
+  }
+
+  /**
+   * Read a UTF-8 file from the fetched archive source.
+   */
+  public readSourceFile(file: string): Promise<string> {
+    return fs.readFile(this.sourceFile(file), "utf8");
   }
 
   public files(): SourceFiles {

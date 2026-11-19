@@ -1,9 +1,8 @@
 import * as fs from "node:fs/promises";
-import * as os from "node:os";
 import * as path from "node:path";
 
 import { runCommand } from "../command.ts";
-import { copyTree } from "../files.ts";
+import { copyTree, tempDir } from "../files.ts";
 import * as nix from "../nix.ts";
 import type { SourceDefinition, SourceFiles } from "../source.ts";
 
@@ -25,40 +24,35 @@ export const lock =
       nix.buildNixpkgsPackage(source.packageDirectory, "yq-go"),
     ]);
 
-    const directory = await fs.mkdtemp(
-      path.join(os.tmpdir(), "nix-repin-pubspec-"),
+    await using tmp = await tempDir("nix-repin-pubspec-");
+    const directory = tmp.path;
+    const tree = path.join(directory, "source");
+    const home = path.join(directory, "home");
+    await copyTree(source.sourceFile("."), tree);
+    await fs.mkdir(home, { recursive: true });
+
+    const environment = {
+      HOME: home,
+      PUB_CACHE: path.join(directory, "pub-cache"),
+    };
+    await runCommand(
+      "nix",
+      ["shell", sdk, "-c", "flutter", "--no-version-check", "pub", "get"],
+      { cwd: tree, env: environment },
     );
-    try {
-      const tree = path.join(directory, "source");
-      const home = path.join(directory, "home");
-      await copyTree(source.sourceFile("."), tree);
-      await fs.mkdir(home, { recursive: true });
+    const contents = await runCommand(
+      "nix",
+      [
+        "shell",
+        yq,
+        "-c",
+        "yq",
+        "--output-format=json",
+        "--prettyPrint",
+        "pubspec.lock",
+      ],
+      { cwd: tree },
+    );
 
-      const environment = {
-        HOME: home,
-        PUB_CACHE: path.join(directory, "pub-cache"),
-      };
-      await runCommand(
-        "nix",
-        ["shell", sdk, "-c", "flutter", "--no-version-check", "pub", "get"],
-        { cwd: tree, env: environment },
-      );
-      const contents = await runCommand(
-        "nix",
-        [
-          "shell",
-          yq,
-          "-c",
-          "yq",
-          "--output-format=json",
-          "--prettyPrint",
-          "pubspec.lock",
-        ],
-        { cwd: tree },
-      );
-
-      return { "pubspec.lock.json": `${contents}\n` } satisfies SourceFiles;
-    } finally {
-      await fs.rm(directory, { recursive: true, force: true });
-    }
+    return { "pubspec.lock.json": `${contents}\n` } satisfies SourceFiles;
   };

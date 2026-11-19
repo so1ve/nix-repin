@@ -1,6 +1,6 @@
 export type { CommandOptions } from "./command.ts";
 export { runCommand } from "./command.ts";
-export { copyTree } from "./files.ts";
+export { copyTree, tempDir } from "./files.ts";
 export * as nix from "./nix.ts";
 export * as aur from "./providers/aur.ts";
 export * as bun from "./providers/bun.ts";

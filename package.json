@@ -6,11 +6,11 @@
   "license": "MIT",
   "exports": {
     ".": {
-      "types": "./types/mod.d.ts",
-      "default": "./src/mod.ts"
+      "types": "./types/index.d.ts",
+      "default": "./src/index.ts"
     }
   },
-  "types": "./types/mod.d.ts",
+  "types": "./types/index.d.ts",
   "engines": {
     "node": "^26"
   },
@@ -20,7 +20,7 @@
     "fix": "eslint . --fix && prettier . --write",
     "format": "prettier . --write",
     "lint": "eslint .",
-    "test": "node --test 'src/**/*_test.ts'",
+    "test": "node --test 'src/**/*.test.ts'",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

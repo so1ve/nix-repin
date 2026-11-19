@@ -22,6 +22,7 @@ let
       ./package-lock.json
       ./tsconfig.json
       ./tsconfig.build.json
+      ./tsconfig.consumer.json
       ./src
     ];
   };
@@ -38,13 +39,15 @@ buildNpmPackage {
   installPhase = ''
     runHook preInstall
 
+    mkdir -p "$out/bin" "$out/share/nix-repin/node_modules/@types"
+    cp -r node_modules/@types/node "$out/share/nix-repin/node_modules/@types/"
+
     npm prune --omit=dev
 
-    mkdir -p "$out/bin" "$out/share/nix-repin"
-    cp -r package.json src types node_modules "$out/share/nix-repin"
-    rm -rf "$out/share/nix-repin/src"/*_test.ts \
-      "$out/share/nix-repin/src/providers"/*_test.ts \
-      "$out/share/nix-repin/src/test_support.ts"
+    cp -r package.json tsconfig.consumer.json src types node_modules "$out/share/nix-repin"
+    rm -rf "$out/share/nix-repin/src"/*.test.ts \
+      "$out/share/nix-repin/src/providers"/*.test.ts \
+      "$out/share/nix-repin/src/test-support.ts"
 
     makeWrapper ${lib.getExe nodejs_26} "$out/bin/nix-repin" \
       --add-flags "$out/share/nix-repin/src/cli.ts" \

@@ -6,7 +6,10 @@ import { selectTag } from "../tags.ts";
 import { template } from "../template.ts";
 import { fetchurl } from "./fetchurl.ts";
 
-const octokit = new Octokit({
+/**
+ * Pre-configured Octokit client using GITHUB_TOKEN or GH_TOKEN.
+ */
+export const octokit = new Octokit({
   auth: process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN,
   userAgent: "nix-repin",
 });
