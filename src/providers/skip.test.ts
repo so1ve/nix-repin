@@ -57,7 +57,11 @@ test("versioned download providers skip prefetching when source.nix matches", as
     globalThis.fetch = () => Promise.resolve(Response.json(entry.response));
     try {
       await withCommands(
-        () => {
+        (program, args) => {
+          if (program === "nix" && args[0] === "eval") {
+            return undefined;
+          }
+
           throw new Error(`${entry.name}: must not prefetch unchanged version`);
         },
         async () => {

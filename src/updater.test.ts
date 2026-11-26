@@ -28,7 +28,10 @@ export default defineSource(
   await fs.writeFile(`${packageDirectory}/dependencies.txt`, "previous");
 
   await withCommands(
-    (program) => {
+    (program, args) => {
+      if (program === "nix" && args[0] === "eval") {
+        return undefined;
+      }
       if (program === "git") {
         return { stdout: `${rev}\tHEAD` };
       }

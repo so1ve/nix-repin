@@ -28,7 +28,7 @@ export async function withCommands<T>(
     program: string,
     args: string[],
     options: SpawnOptions,
-  ) => CommandResult | Promise<CommandResult>,
+  ) => CommandResult | undefined | Promise<CommandResult | undefined>,
   run: () => Promise<T>,
 ): Promise<T> {
   const originalSpawn = childProcess.spawn;
@@ -37,14 +37,24 @@ export async function withCommands<T>(
     args: readonly string[] = [],
     options: SpawnOptions = {},
   ) => {
+    const response = respond(program, [...args], options);
+    if (response === undefined) {
+      return originalSpawn(program, args, options);
+    }
+
     const child = new EventEmitter() as ChildProcess & {
       stdout: PassThrough;
       stderr: PassThrough;
     };
     child.stdout = new PassThrough();
     child.stderr = new PassThrough();
-    Promise.resolve(respond(program, [...args], options)).then(
+    Promise.resolve(response).then(
       (result) => {
+        if (result === undefined) {
+          child.emit("error", new Error("async pass-through is unsupported"));
+
+          return;
+        }
         if (result.stdout) {
           child.stdout.write(result.stdout);
         }

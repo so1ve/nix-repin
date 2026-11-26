@@ -124,6 +124,125 @@ pkgs.${attribute}`;
   return result.outputs.out;
 }
 
+async function ensureFileExists(file: string): Promise<string | undefined> {
+  const resolved = path.resolve(file);
+  try {
+    const stat = await fs.stat(resolved);
+    if (!stat.isFile()) {
+      const error = new Error(
+        `EISDIR: illegal operation on a directory, read '${resolved}'`,
+      );
+      (error as NodeJS.ErrnoException).code = "EISDIR";
+
+      throw error;
+    }
+
+    return resolved;
+  } catch (error) {
+    if (isNotFound(error)) {
+      return undefined;
+    }
+
+    throw error;
+  }
+}
+
+const evalImportedExpr = (resolved: string): string => `let
+  imported = import (builtins.toPath ${string(resolved)});
+  call =
+    system:
+    if builtins.isFunction imported then
+      imported (
+        builtins.mapAttrs (
+          name: _:
+          if name == "stdenv" then { hostPlatform.system = system; } else x: x
+        ) (builtins.functionArgs imported)
+      )
+    else
+      imported;`;
+
+/**
+ * Evaluate selected top-level attributes of a generated Nix file by stubbing
+ * fetcher arguments as identity functions. Returns `undefined` when the file
+ * does not exist.
+ */
+export async function evalSource(
+  file: string,
+  attributes: string[],
+  system = "x86_64-linux",
+): Promise<Record<string, unknown> | undefined> {
+  const resolved = await ensureFileExists(file);
+  if (resolved === undefined) {
+    return undefined;
+  }
+
+  const keys = attributes.map(string).join(" ");
+  const expression = `${evalImportedExpr(resolved)}
+  value = call ${string(system)};
+  present = builtins.filter (name: builtins.hasAttr name value) [ ${keys} ];
+in
+builtins.listToAttrs (
+  map (name: {
+    inherit name;
+    value =
+      let
+        evaluated = builtins.tryEval (builtins.toJSON value.\${name});
+      in
+      if evaluated.success then builtins.fromJSON evaluated.value else null;
+  }) present
+)`;
+
+  const output = await runCommand("nix", [
+    "eval",
+    "--impure",
+    "--json",
+    "--expr",
+    expression,
+  ]);
+
+  return JSON.parse(output) as Record<string, unknown>;
+}
+
+/**
+ * Evaluate a generated Nix file for each requested Nix system, stubbing fetcher
+ * arguments as identity functions. Unsupported systems yield `null`.
+ */
+export async function evalSources(
+  file: string,
+  systems: string[],
+): Promise<Record<string, Record<string, unknown> | null> | undefined> {
+  const resolved = await ensureFileExists(file);
+  if (resolved === undefined) {
+    return undefined;
+  }
+
+  const entries = systems
+    .map(
+      (system) => `  ${string(system)} =
+    let
+      evaluated = builtins.tryEval (builtins.toJSON (call ${string(system)}));
+    in
+    if evaluated.success then builtins.fromJSON evaluated.value else null;`,
+    )
+    .join("\n");
+
+  const expression = `${evalImportedExpr(resolved)}
+in
+{
+${entries}
+}`;
+
+  const output = await runCommand("nix", [
+    "eval",
+    "--impure",
+    "--json",
+    "--expr",
+    expression,
+  ]);
+
+  return JSON.parse(output) as Record<string, Record<string, unknown> | null>;
+}
+
 export function renderSource(
   inputs: string[],
   attributes: Record<string, string>,

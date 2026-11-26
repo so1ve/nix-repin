@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
-import { readTextFileIfExists } from "./files.ts";
 import * as nix from "./nix.ts";
 
 export type FileSource = string | Uint8Array | URL;
@@ -28,18 +28,25 @@ export class Source {
   }
 
   /**
-   * Compare attributes against the existing generated source.nix.
+   * Compare attributes against an existing generated Nix file.
    */
-  public async matches(attributes: Record<string, string>): Promise<boolean> {
-    const previous = await readTextFileIfExists(
-      path.join(this.packageDirectory, "source.nix"),
+  public async matches(
+    attributes: Record<string, unknown>,
+    file = "source.nix",
+  ): Promise<boolean> {
+    const keys = Object.keys(attributes);
+    const existing = await nix.evalSource(
+      path.join(this.packageDirectory, file),
+      keys,
     );
-    if (previous === undefined) {
+    if (existing === undefined) {
       return false;
     }
 
-    return Object.entries(attributes).every(([name, value]) =>
-      previous.includes(`\n  ${name} = ${nix.string(value)};\n`),
+    return keys.every(
+      (name) =>
+        Object.hasOwn(existing, name) &&
+        isDeepStrictEqual(existing[name], attributes[name]),
     );
   }
 
@@ -56,15 +63,18 @@ export class Source {
    * Run a definition, collecting its files or discarding the update on false.
    */
   public async apply(definition: SourceDefinition): Promise<boolean> {
-    const files = await definition(this);
-    if (files === false) {
+    const result = await definition(this);
+    if (typeof result === "function") {
+      return this.apply(result);
+    }
+    if (result === false) {
       this.#files = {};
       this.#nixSource = undefined;
 
       return false;
     }
-    if (files !== undefined) {
-      this.addFiles(files);
+    if (result !== undefined) {
+      this.addFiles(result);
     }
 
     return true;
@@ -139,7 +149,12 @@ export class Source {
 
 export type SourceDefinition = (
   source: Source,
-) => void | false | SourceFiles | Promise<void | false | SourceFiles>;
+) =>
+  | void
+  | false
+  | SourceFiles
+  | SourceDefinition
+  | Promise<void | false | SourceFiles | SourceDefinition>;
 
 /**
  * Compose providers so they share one source archive and generated output.

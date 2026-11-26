@@ -81,3 +81,36 @@ test("attribute comparisons remain accurate when updates are forced", async () =
   await rejects(source.shouldSkip(unchanged), { code: "EISDIR" });
   deepStrictEqual(await forced.shouldSkip(unchanged), false);
 });
+
+test("matches compares attributes in a custom generated file", async () => {
+  await using tmp = await tempDir("nix-repin-custom-file-test-");
+  const source = new Source(tmp.path);
+  const file = "extra-source.nix";
+
+  deepStrictEqual(await source.matches({ rev: "abc123" }, file), false);
+  await fs.writeFile(
+    `${tmp.path}/${file}`,
+    nix.renderSource([], { rev: "abc123" }, "  src = null;"),
+  );
+  deepStrictEqual(await source.matches({ rev: "abc123" }, file), true);
+  deepStrictEqual(await source.matches({ rev: "def456" }, file), false);
+
+  await fs.writeFile(
+    `${tmp.path}/list.nix`,
+    `{ }: { plugins = [ "a" "b" ]; caddyVersion = "2.11.2"; }\n`,
+  );
+  deepStrictEqual(
+    await source.matches(
+      { caddyVersion: "2.11.2", plugins: ["a", "b"] },
+      "list.nix",
+    ),
+    true,
+  );
+  deepStrictEqual(
+    await source.matches(
+      { caddyVersion: "2.11.2", plugins: ["a"] },
+      "list.nix",
+    ),
+    false,
+  );
+});

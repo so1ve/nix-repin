@@ -228,7 +228,7 @@ export const release =
           return [system, { hash, url: asset.browser_download_url }];
         }),
       );
-      source.addFiles(await fetchurl({ urls, version }));
+      await source.apply(fetchurl({ urls, version }));
     } else {
       return archive(source, options, { version, rev: tag });
     }

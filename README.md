@@ -436,7 +436,8 @@ from the fetched tree with `source.sourceFile(path)` / `source.readSourceFile(pa
 and discards the output collected so far.
 
 Use `source.matches({ rev })` to compare attributes with the existing generated
-`source.nix`. It returns `true` when all supplied values match, and `false` if
+`source.nix` (or pass a second filename argument, such as
+`source.matches({ rev }, "extra-source.nix")`). It returns `true` when all supplied values match, and `false` if
 the file or an attribute is missing. You can compare several attributes at once,
 such as `source.matches({ rev, version })`.
 
