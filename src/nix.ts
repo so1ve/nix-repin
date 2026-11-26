@@ -93,6 +93,39 @@ export async function findFlakeRoot(from: string): Promise<string> {
   }
 }
 
+async function nixpkgsExpression(
+  packageDirectory: string,
+  attribute: string,
+): Promise<string> {
+  const root = await findFlakeRoot(packageDirectory);
+
+  return `let
+  flake = builtins.getFlake ${string(`path:${root}`)};
+  pkgs = flake.inputs.nixpkgs.legacyPackages.\${builtins.currentSystem};
+in
+pkgs.${attribute}`;
+}
+
+/**
+ * Evaluate an attribute of the repository flake's `nixpkgs` input for the
+ * current system and parse its JSON result.
+ */
+export async function evalNixpkgs<T = unknown>(
+  packageDirectory: string,
+  attribute: string,
+): Promise<T> {
+  const expression = await nixpkgsExpression(packageDirectory, attribute);
+  const output = await runCommand("nix", [
+    "eval",
+    "--expr",
+    expression,
+    "--impure",
+    "--json",
+  ]);
+
+  return JSON.parse(output) as T;
+}
+
 /**
  * Build an attribute of the repository flake's `nixpkgs` input for the current
  * system and return the store path of its `out` output.
@@ -101,12 +134,7 @@ export async function buildNixpkgsPackage(
   packageDirectory: string,
   attribute: string,
 ): Promise<string> {
-  const root = await findFlakeRoot(packageDirectory);
-  const expression = `let
-  flake = builtins.getFlake ${string(`path:${root}`)};
-  pkgs = flake.inputs.nixpkgs.legacyPackages.\${builtins.currentSystem};
-in
-pkgs.${attribute}`;
+  const expression = await nixpkgsExpression(packageDirectory, attribute);
 
   const output = await runCommand("nix", [
     "build",
@@ -122,6 +150,45 @@ pkgs.${attribute}`;
   }[];
 
   return result.outputs.out;
+}
+
+/**
+ * Build a fixed-output derivation expression with a placeholder hash and return
+ * the actual hash reported by Nix for that exact derivation.
+ */
+export async function fixedOutputHash(expression: string): Promise<string> {
+  const derivation = (
+    await runCommand("nix", [
+      "eval",
+      "--raw",
+      "--impure",
+      "--expr",
+      `(${expression}).drvPath`,
+    ])
+  ).trim();
+
+  try {
+    await runCommand("nix", ["build", "--no-link", `${derivation}^out`]);
+  } catch (error) {
+    if (!(error instanceof Error)) {
+      throw error;
+    }
+    const marker = `hash mismatch in fixed-output derivation '${derivation}':`;
+    const position = error.message.indexOf(marker);
+    const hash =
+      position === -1
+        ? undefined
+        : error.message
+            .slice(position + marker.length)
+            .match(/\bgot:\s+(sha256-[A-Za-z0-9+/]{43}=)/)?.[1];
+    if (!hash) {
+      throw error;
+    }
+
+    return hash;
+  }
+
+  throw new Error(`${derivation}: expected a fixed-output hash mismatch`);
 }
 
 async function ensureFileExists(file: string): Promise<string | undefined> {
